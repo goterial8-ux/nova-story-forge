@@ -1,0 +1,109 @@
+name: Apply Style Analyzer Rate Limit Fix
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Apply patch
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const appPath = 'src/App.tsx';
+          let app = fs.readFileSync(appPath, 'utf8');
+
+          if (!app.includes('[LOCAL STYLE ANALYZER CHECK - NO AI SUPERVISOR CALL]')) {
+            const marker = '  // --- Supervisor --\n  const handleAnalyze = () => {\n';
+            const insert = `  // --- Supervisor --
+  const handleAnalyze = () => {
+    if (currentStageId === "style_analyzer") {
+      const stageContent = getStageContent(currentStageId);
+      const report: SupervisorReport = {
+        status: stageContent.trim().length > 200 ? "ok" : "needs_small_repair",
+        whatIsGood:
+          "Style Analyzer is a support stage. It does not need an extra AI Supervisor call.",
+        problems:
+          stageContent.trim().length > 200
+            ? []
+            : ["Style DNA is too short or empty."],
+        requiredFixes:
+          stageContent.trim().length > 200
+            ? []
+            : ["Regenerate Style Analyzer or add more style notes."],
+        recommendation:
+          stageContent.trim().length > 200
+            ? "Local style check passed. Safe to approve and lock."
+            : "Style DNA needs more substance before locking.",
+        canContinue: stageContent.trim().length > 200,
+      };
+
+      updateState({
+        supervisorReports: {
+          ...stateRef.current.supervisorReports,
+          [currentStageId]: report,
+        },
+        promptHistory: [
+          {
+            id: Date.now().toString(),
+            stageId: currentStageId,
+            promptUsed: "[LOCAL STYLE ANALYZER CHECK - NO AI SUPERVISOR CALL]",
+            inputDataSummary: "Local check for Style Analyzer",
+            outputPreview: JSON.stringify(report, null, 2),
+            createdAt: Date.now(),
+            supervisorStatus: report.status,
+            repairApplied: false,
+            lockedStatus: false,
+          },
+          ...stateRef.current.promptHistory,
+        ],
+      });
+      updateStageStatus(
+        currentStageId,
+        report.canContinue ? "generated" : "needs_repair",
+      );
+      return;
+    }
+
+`;
+
+            if (!app.includes(marker)) {
+              throw new Error('Could not find handleAnalyze marker in src/App.tsx');
+            }
+            app = app.replace(marker, insert);
+            fs.writeFileSync(appPath, app);
+          }
+
+          const promptBuilderPath = 'src/lib/PromptBuilder.ts';
+          let promptBuilder = fs.readFileSync(promptBuilderPath, 'utf8');
+          promptBuilder = promptBuilder.replace(
+            'function referenceExamples(state: ProjectState, maxChars = 45_000): string {',
+            'function referenceExamples(state: ProjectState, maxChars = 14_000): string {'
+          );
+          fs.writeFileSync(promptBuilderPath, promptBuilder);
+          NODE
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/lib/PromptBuilder.ts
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Fix Style Analyzer rate limit loop"
+            git push
+          fi
