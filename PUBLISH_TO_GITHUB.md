@@ -1,29 +1,35 @@
 # Publish To GitHub
 
-The full prepared project is currently local on this machine:
+Suggested repository name:
+
+```text
+nova-story-forge
+```
+
+Visibility:
+
+```text
+Public
+```
+
+## Option A: GitHub Website
+
+1. Open GitHub.
+2. Click **New repository**.
+3. Repository name: `nova-story-forge`.
+4. Visibility: **Public**.
+5. Create an empty repository.
+6. Upload the contents of this folder:
 
 ```text
 C:\Users\andre\OneDrive\Документы\аи асистент\nova-story-forge
 ```
 
-A ready ZIP also exists here:
+Do not upload a real `.env` file.
 
-```text
-C:\Users\andre\OneDrive\Документы\аи асистент\nova-story-forge.zip
-```
+## Option B: After Installing Git
 
-## Upload Through GitHub Website
-
-1. Open the repository page.
-2. Click **Add file**.
-3. Choose **Upload files**.
-4. Drag the contents of the local `nova-story-forge` folder into the upload area.
-5. Do not upload a real `.env` file.
-6. Commit the upload to `main`.
-
-## Upload With Git After Installing It
-
-Run these commands inside the local project folder:
+Run these commands inside the project folder:
 
 ```bash
 git init

@@ -1,0 +1,8 @@
+{
+  "name": "Nova Story Forge",
+  "description": "A manga/manhwa recap story studio with staged planning, script writing, AI supervision, and clean export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
