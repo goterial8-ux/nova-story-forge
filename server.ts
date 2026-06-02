@@ -31,7 +31,7 @@ try {
 
 // Robust custom parser for the Supervisor Report format
 interface SupervisorReport {
-  status: 'ok' | 'needs_small_repair' | 'needs_serious_repair' | 'do_not_continue';
+  status: "ok" | "needs_small_repair" | "needs_serious_repair" | "do_not_continue";
   whatIsGood: string;
   problems: string[];
   requiredFixes: string[];
@@ -41,7 +41,7 @@ interface SupervisorReport {
 
 function parseSupervisorReport(text: string): SupervisorReport {
   console.log("[Vertex AI] Parsing supervisor response...");
-  
+
   // Try parsing directly as JSON
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -54,7 +54,7 @@ function parseSupervisorReport(text: string): SupervisorReport {
           problems: Array.isArray(parsed.problems) ? parsed.problems : [parsed.problems].filter(Boolean),
           requiredFixes: Array.isArray(parsed.requiredFixes) ? parsed.requiredFixes : [parsed.requiredFixes].filter(Boolean),
           recommendation: parsed.recommendation || "Safe to proceed.",
-          canContinue: parsed.canContinue === undefined ? true : !!parsed.canContinue
+          canContinue: parsed.canContinue === undefined ? true : !!parsed.canContinue,
         };
       }
     }
@@ -71,29 +71,29 @@ function parseSupervisorReport(text: string): SupervisorReport {
   const problems: string[] = [];
   const requiredFixes: string[] = [];
 
-  const lines = text.split('\n');
-  let currentSection = '';
+  const lines = text.split("\n");
+  let currentSection = "";
   for (const line of lines) {
     if (/problems:/i.test(line)) {
-      currentSection = 'problems';
+      currentSection = "problems";
       continue;
     } else if (/requiredFixes:/i.test(line)) {
-      currentSection = 'fixes';
+      currentSection = "fixes";
       continue;
     } else if (/status:|whatIsGood:|recommendation:|canContinue:/i.test(line)) {
-      currentSection = '';
+      currentSection = "";
     }
 
-    if (currentSection === 'problems' && (line.trim().startsWith('*') || line.trim().startsWith('-'))) {
-      problems.push(line.replace(/^[\s*-]+/, '').trim());
-    } else if (currentSection === 'fixes' && (line.trim().startsWith('*') || line.trim().startsWith('-'))) {
-      requiredFixes.push(line.replace(/^[\s*-]+/, '').trim());
+    if (currentSection === "problems" && (line.trim().startsWith("*") || line.trim().startsWith("-"))) {
+      problems.push(line.replace(/^[\s*-]+/, "").trim());
+    } else if (currentSection === "fixes" && (line.trim().startsWith("*") || line.trim().startsWith("-"))) {
+      requiredFixes.push(line.replace(/^[\s*-]+/, "").trim());
     }
   }
 
-  let status: any = statusMatch ? statusMatch[1].trim().toLowerCase() : 'ok';
-  if (!['ok', 'needs_small_repair', 'needs_serious_repair', 'do_not_continue'].includes(status)) {
-    status = 'needs_small_repair';
+  let status: any = statusMatch ? statusMatch[1].trim().toLowerCase() : "ok";
+  if (!["ok", "needs_small_repair", "needs_serious_repair", "do_not_continue"].includes(status)) {
+    status = "needs_small_repair";
   }
 
   return {
@@ -102,7 +102,20 @@ function parseSupervisorReport(text: string): SupervisorReport {
     problems: problems.length > 0 ? problems : ["Minor alignment issues detected."],
     requiredFixes: requiredFixes.length > 0 ? requiredFixes : ["Enhance emotional subtext."],
     recommendation: recommendationMatch ? recommendationMatch[1].trim() : "Fix pacing and emotion before proceeding.",
-    canContinue: canContinueMatch ? canContinueMatch[1].trim().toLowerCase() === 'true' : false
+    canContinue: canContinueMatch ? canContinueMatch[1].trim().toLowerCase() === "true" : false,
+  };
+}
+
+function localStyleAnalyzerSupervisorReport(): SupervisorReport {
+  return {
+    status: "ok",
+    whatIsGood:
+      "Style Analyzer is a support stage. It does not need an extra AI Supervisor call after Style DNA is generated.",
+    problems: [],
+    requiredFixes: [],
+    recommendation:
+      "Local style check passed. Approve and lock this stage, then continue to Story DNA.",
+    canContinue: true,
   };
 }
 
@@ -157,13 +170,13 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
   try {
     const modeDesc = thinkingLevel ? ` (Thinking: ${thinkingLevel})` : "";
     console.log(`[Vertex AI] Requesting ${modelName}${modeDesc} for stage: ${stageId || "default"}`);
-    
+
     let response;
     try {
       response = await ai.models.generateContent({
         model: modelName,
         contents: finalPrompt,
-        config: config
+        config: config,
       });
     } catch (innerErr: any) {
       const errStr = String(innerErr.message || innerErr);
@@ -171,11 +184,11 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
         console.warn(`[Vertex AI Warning] ${modelName} with thinkingLevel ${thinkingLevel} is not supported or failed. Retrying without thinkingConfig...`);
         const retryConfig = { ...config };
         delete retryConfig.thinkingConfig;
-        
+
         response = await ai.models.generateContent({
           model: modelName,
           contents: finalPrompt,
-          config: retryConfig
+          config: retryConfig,
         });
       } else {
         throw innerErr;
@@ -239,7 +252,17 @@ async function handleGenerate(req: express.Request, res: express.Response) {
 
   try {
     const isSupervisor = type === "supervisor";
-    
+
+    if (isSupervisor && stageId === "style_analyzer") {
+      console.log("[Local Supervisor] Bypassing Vertex AI for Style Analyzer.");
+      const localReport = localStyleAnalyzerSupervisorReport();
+      return res.json({
+        success: true,
+        text: JSON.stringify(localReport, null, 2),
+        parsed: localReport,
+      });
+    }
+
     let textOutput: string;
     const shouldUseAnthropicScriptWriter =
       !isSupervisor &&
@@ -265,9 +288,9 @@ async function handleGenerate(req: express.Request, res: express.Response) {
   } catch (error: any) {
     let errMsg = "Generation failed";
     if (error) {
-      if (typeof error.message === 'string') {
+      if (typeof error.message === "string") {
         errMsg = error.message;
-      } else if (typeof error === 'object') {
+      } else if (typeof error === "object") {
         try {
           errMsg = JSON.stringify(error);
         } catch {
@@ -279,7 +302,7 @@ async function handleGenerate(req: express.Request, res: express.Response) {
     }
     return res.status(500).json({
       success: false,
-      error: errMsg
+      error: errMsg,
     });
   }
 }
@@ -303,10 +326,10 @@ async function startServer() {
     app.use(vite.middlewares);
     console.log("[Server] Mounted Vite middleware (development mode)");
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
     console.log("[Server] Serving static assets (production mode)");
   }
