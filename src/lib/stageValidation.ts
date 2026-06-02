@@ -21,17 +21,19 @@ export interface StageValidationResult {
 
 function checkTerms(
   content: string,
-  terms: string[],
+  terms: Array<string | string[]>,
   result: StageValidationResult,
   stageName: string,
 ) {
   const c = content.toLowerCase();
   for (const term of terms) {
-    if (!c.includes(term.toLowerCase())) {
+    const aliases = Array.isArray(term) ? term : [term];
+    if (!aliases.some((alias) => c.includes(alias.toLowerCase()))) {
+      const label = aliases[0];
       result.blockingProblems.push(
-        `Missing required element in ${stageName}: '${term}'`,
+        `Missing required element in ${stageName}: '${label}'`,
       );
-      result.requiredFixes.push(`Add or clearly define: '${term}'`);
+      result.requiredFixes.push(`Add or clearly define: '${label}'`);
     }
   }
 }
@@ -86,15 +88,15 @@ export function validateStageContent(
       checkTerms(
         content,
         [
-          "Protagonist",
-          "start",
-          "power source",
+          ["Protagonist", "Main Character", "Hero"],
+          ["start", "opening", "beginning"],
+          ["power source", "advantage", "mechanic"],
           "conflict",
-          "Antagonist",
-          "Emotional engine",
-          "Payoff promise",
-          "Forbidden changes",
-          "Handoff Summary for Stage Two",
+          ["Antagonist", "Enemy", "Villain"],
+          ["Emotional engine", "humiliation", "motivation"],
+          ["Payoff promise", "final payoff", "payoff"],
+          ["Forbidden changes", "forbidden", "rules"],
+          ["Handoff Summary for Stage Two", "handoff"],
         ],
         result,
         "Raw Idea",
@@ -105,15 +107,15 @@ export function validateStageContent(
       checkTerms(
         content,
         [
-          "sentence rhythm",
-          "paragraph rhythm",
-          "narrator voice",
-          "action explanation",
-          "transition pattern",
-          "payoff pattern",
-          "comedy pattern",
-          "face-slap pattern",
-          "forbidden generic wording",
+          ["sentence rhythm", "rhythm"],
+          ["paragraph rhythm", "paragraph"],
+          ["narrator voice", "voice"],
+          ["action explanation", "action"],
+          ["transition pattern", "transition"],
+          ["payoff pattern", "payoff"],
+          ["comedy pattern", "comedy"],
+          ["face-slap pattern", "face-slap"],
+          ["forbidden generic wording", "forbidden"],
         ],
         result,
         "Style Analyzer",
@@ -124,16 +126,21 @@ export function validateStageContent(
       checkTerms(
         content,
         [
-          "Locked Story Contract",
-          "Character Bible",
-          "Protagonist",
-          "Antagonist",
-          "Character function matrix",
-          "Emotional engine lock",
-          "Power source lock",
-          "Hidden cards",
-          "Forbidden changes",
-          "Continuity handoff for Stage Three",
+          ["Locked Story Contract", "Story Contract", "Story DNA"],
+          ["Protagonist", "Main Character", "Hero"],
+          ["Antagonist", "Enemy", "Villain"],
+          [
+            "Character function matrix",
+            "Character functions",
+            "Important side characters",
+            "Side characters",
+            "Allies",
+          ],
+          ["Emotional engine lock", "Emotional engine", "humiliation"],
+          ["Power source lock", "Power source", "advantage", "mechanic"],
+          ["Hidden cards", "Hidden card", "setup/payoff"],
+          ["Forbidden changes", "forbidden", "rules"],
+          ["Continuity handoff for Stage Three", "Continuity handoff", "handoff"],
         ],
         result,
         "Story DNA",
@@ -144,18 +151,18 @@ export function validateStageContent(
       checkTerms(
         content,
         [
-          "part function",
-          "beginning pressure",
-          "main events",
-          "central conflict",
-          "resource/progress movement",
-          "protagonist movement",
-          "antagonist pressure",
-          "emotional engine movement",
-          "hidden card movement",
-          "hidden card timing map",
-          "resource/progress ladder",
-          "script formatting contract",
+          ["part function", "function"],
+          ["beginning pressure", "pressure"],
+          ["main events", "events"],
+          ["central conflict", "conflict"],
+          ["resource/progress movement", "resource", "progress"],
+          ["protagonist movement", "protagonist", "hero"],
+          ["antagonist pressure", "antagonist", "enemy"],
+          ["emotional engine movement", "emotional engine"],
+          ["hidden card movement", "hidden card"],
+          ["hidden card timing map", "timing map"],
+          ["resource/progress ladder", "progress ladder", "resource ladder"],
+          ["script formatting contract", "formatting contract"],
         ],
         result,
         "Story Plan",
@@ -178,13 +185,13 @@ export function validateStageContent(
         content,
         [
           "location",
-          "main action",
-          "emotion",
-          "visual focus",
+          ["main action", "action"],
+          ["emotion", "mood"],
+          ["visual focus", "visual"],
           "scale",
-          "what must be shown",
-          "what must not be shown",
-          "continuity details",
+          ["what must be shown", "must be shown"],
+          ["what must not be shown", "must not be shown"],
+          ["continuity details", "continuity"],
         ],
         result,
         "Scene Cards",
