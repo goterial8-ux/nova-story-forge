@@ -114,10 +114,13 @@ This is the last and strongest instruction for Script Writer.
 
 Write the current part as an English first-person manga/manhwa recap script.
 Use the approved Story Plan and current Scene Cards as the source of truth.
+Treat the response as the exact body of a plain .txt file for the current script part.
+Do not describe the file, do not provide a filename, do not wrap the answer in a code block, and do not write any explanation before or after the script text.
 Do not fight the prompt with old formatting police rules. Draft paragraphs may be natural voiceover frames; exact paragraph length is not a blocking goal during Script Writer.
 
 For every part:
-- open with pressure already moving;
+- write only the requested current part, for example Part One means Part One only;
+- preserve the first-person competitor-style rhythm: fast, direct, visual, practical, and emotionally pressured;
 - follow the current part scene cards in order;
 - write from inside the protagonist's head using I / my / we naturally;
 - use competitor references only for rhythm and delivery, never for plot;
@@ -133,7 +136,7 @@ Forbidden output:
 - no generic "little did I know" or empty destiny prose;
 - no copying reference plots, names, scenes, powers, or twists.
 
-Output only the script text for this part.
+Output only the plain .txt file body for this current part.
 `;
 
 function localSupervisorPassReport(stageId: string): SupervisorReport {
