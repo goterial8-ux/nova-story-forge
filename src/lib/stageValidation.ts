@@ -19,6 +19,24 @@ export interface StageValidationResult {
   canContinue: boolean;
 }
 
+const SUPERVISED_STAGES: StageValidationScope[] = [
+  "story_plan",
+  "scene_cards",
+];
+
+function createResult(stageId: StageValidationScope): StageValidationResult {
+  return {
+    ok: true,
+    stageId,
+    problems: [],
+    requiredFixes: [],
+    blockingProblems: [],
+    warnings: [],
+    metrics: {},
+    canContinue: true,
+  };
+}
+
 function checkTerms(
   content: string,
   terms: Array<string | string[]>,
@@ -41,113 +59,24 @@ function checkTerms(
 export function validateStageContent(
   content: string,
   stageId: StageValidationScope,
-  projectState: any,
+  _projectState: any,
 ): StageValidationResult {
-  const result: StageValidationResult = {
-    ok: true,
-    stageId,
-    problems: [],
-    requiredFixes: [],
-    blockingProblems: [],
-    warnings: [],
-    metrics: {},
-    canContinue: true,
-  };
+  const result = createResult(stageId);
+
+  if (!SUPERVISED_STAGES.includes(stageId)) {
+    result.warnings.push(
+      "Local deterministic gate skipped. Only Story Plan and Scene Cards are blocking quality gates.",
+    );
+    return result;
+  }
 
   if (!content || !content.trim()) {
     result.blockingProblems.push("Stage content is completely empty.");
     return finalizeResult(result);
   }
 
-  const c_lower = content.toLowerCase();
-
   switch (stageId) {
-    case "idea_market":
-      if (projectState.ideaMode === "develop_raw_idea") {
-        if (!c_lower.includes("pasteable raw idea for stage one")) {
-          result.blockingProblems.push(
-            "Missing required section: 'Pasteable Raw Idea For Stage One'.",
-          );
-          result.requiredFixes.push(
-            "Ensure the output includes 'Pasteable Raw Idea For Stage One' with the fortified idea.",
-          );
-        }
-      } else {
-        if (!c_lower.includes("pasteable raw idea for stage one")) {
-          result.blockingProblems.push(
-            "Missing required section: 'Pasteable Raw Idea For Stage One'.",
-          );
-          result.requiredFixes.push(
-            "Include a recommended 'Pasteable Raw Idea For Stage One'.",
-          );
-        }
-      }
-      break;
-
-    case "raw_idea":
-      checkTerms(
-        content,
-        [
-          ["Protagonist", "Main Character", "Hero"],
-          ["start", "opening", "beginning"],
-          ["power source", "advantage", "mechanic"],
-          "conflict",
-          ["Antagonist", "Enemy", "Villain"],
-          ["Emotional engine", "humiliation", "motivation"],
-          ["Payoff promise", "final payoff", "payoff"],
-          ["Forbidden changes", "forbidden", "rules"],
-          ["Handoff Summary for Stage Two", "handoff"],
-        ],
-        result,
-        "Raw Idea",
-      );
-      break;
-
-    case "style_analyzer":
-      checkTerms(
-        content,
-        [
-          ["sentence rhythm", "rhythm"],
-          ["paragraph rhythm", "paragraph"],
-          ["narrator voice", "voice"],
-          ["action explanation", "action"],
-          ["transition pattern", "transition"],
-          ["payoff pattern", "payoff"],
-          ["comedy pattern", "comedy"],
-          ["face-slap pattern", "face-slap"],
-          ["forbidden generic wording", "forbidden"],
-        ],
-        result,
-        "Style Analyzer",
-      );
-      break;
-
-    case "story_dna":
-      checkTerms(
-        content,
-        [
-          ["Locked Story Contract", "Story Contract", "Story DNA"],
-          ["Protagonist", "Main Character", "Hero"],
-          ["Antagonist", "Enemy", "Villain"],
-          [
-            "Character function matrix",
-            "Character functions",
-            "Important side characters",
-            "Side characters",
-            "Allies",
-          ],
-          ["Emotional engine lock", "Emotional engine", "humiliation"],
-          ["Power source lock", "Power source", "advantage", "mechanic"],
-          ["Hidden cards", "Hidden card", "setup/payoff"],
-          ["Forbidden changes", "forbidden", "rules"],
-          ["Continuity handoff for Stage Three", "Continuity handoff", "handoff"],
-        ],
-        result,
-        "Story DNA",
-      );
-      break;
-
-    case "story_plan":
+    case "story_plan": {
       checkTerms(
         content,
         [
@@ -160,13 +89,12 @@ export function validateStageContent(
           ["antagonist pressure", "antagonist", "enemy"],
           ["emotional engine movement", "emotional engine"],
           ["hidden card movement", "hidden card"],
-          ["hidden card timing map", "timing map"],
           ["resource/progress ladder", "progress ladder", "resource ladder"],
-          ["script formatting contract", "formatting contract"],
         ],
         result,
         "Story Plan",
       );
+
       const partRegex = /Part\s+[A-Za-z0-9]+/gi;
       const partsFound = (content.match(partRegex) || []).length;
       result.metrics.partsDetected = partsFound;
@@ -179,8 +107,9 @@ export function validateStageContent(
         );
       }
       break;
+    }
 
-    case "scene_cards":
+    case "scene_cards": {
       checkTerms(
         content,
         [
@@ -196,8 +125,8 @@ export function validateStageContent(
         result,
         "Scene Cards",
       );
-      const sceneCardRegex = /Scene Card/gi;
-      const sceneCardsFound = (content.match(sceneCardRegex) || []).length;
+
+      const sceneCardsFound = (content.match(/Scene Card/gi) || []).length;
       result.metrics.sceneCardsDetected = sceneCardsFound;
 
       const claimedCardsMatch = content.match(
@@ -213,8 +142,6 @@ export function validateStageContent(
         );
       } else if (claimedCardsMatch) {
         const claimedCount = parseInt(claimedCardsMatch[1], 10);
-        // Often the number is claimed but output truncated, or they don't match.
-        // Allow a small margin of error (e.g., +/- 1) due to intro/outro, but fail if completely wrong.
         if (sceneCardsFound < claimedCount - 1) {
           result.blockingProblems.push(
             `Output claimed to generate ${claimedCount} scene cards, but only ${sceneCardsFound} were detected.`,
@@ -225,27 +152,11 @@ export function validateStageContent(
         }
       } else if (sceneCardsFound < 10) {
         result.warnings.push(
-          "Detected fewer than 10 scene cards. Ensure this isn't a partial generation if a full plan was expected.",
+          "Detected fewer than 10 scene cards. Ensure this is not a partial generation if a full plan was expected.",
         );
       }
       break;
-
-    case "clean_export":
-      // Basic fallback since clean_export also goes through validateScriptText
-      if (
-        !projectState?.exportSettings?.keepPartHeadings &&
-        /^#|^Part\s+\d/im.test(content)
-      ) {
-        result.blockingProblems.push(
-          "Found headings/part labels when export settings dictate they should be removed.",
-        );
-        result.requiredFixes.push("Remove all headers like 'Part 1'.");
-      }
-      if (/[\[\(\{]note:/i.test(content) || /\[debug\]/i.test(content)) {
-        result.blockingProblems.push("Found debug or note labels.");
-        result.requiredFixes.push("Remove any [note:] or [debug] blocks.");
-      }
-      break;
+    }
   }
 
   return finalizeResult(result);
@@ -265,17 +176,16 @@ export function mergeWithStageValidation(
 ): any {
   if (localVal.ok) return aiReport;
 
-  const mergedStatus = "needs_serious_repair";
   return {
     ...aiReport,
-    status: mergedStatus,
+    status: "needs_serious_repair",
     problems: [...(aiReport.problems || []), ...localVal.blockingProblems],
     requiredFixes: [
       ...(aiReport.requiredFixes || []),
       ...localVal.requiredFixes,
     ],
     recommendation:
-      "Deterministic validation failed. Repair the listed structural/content issues before approval.",
+      "Deterministic validation failed on the active quality gate. Repair the listed story-structure issues before approval.",
     canContinue: false,
   };
 }
