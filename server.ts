@@ -400,6 +400,26 @@ async function generateClaudeContent(prompt: string): Promise<string> {
   throw new Error("Invalid or empty response structure from Anthropic Claude API.");
 }
 
+function shouldFallbackFromClaudeToGemini(error: any): boolean {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    error?.status === 429 ||
+    message.includes("rate_limit_error") ||
+    message.includes("rate limit") ||
+    message.includes("input tokens per minute") ||
+    message.includes("output tokens per minute") ||
+    message.includes("tokens per minute") ||
+    message.includes("context_length_exceeded") ||
+    message.includes("context length") ||
+    message.includes("prompt is too long") ||
+    message.includes("max_tokens") ||
+    message.includes("token limit") ||
+    message.includes("quota") ||
+    message.includes("overloaded_error") ||
+    message.includes("overloaded")
+  );
+}
+
 // Unified generate/RPC route
 async function handleGenerate(req: express.Request, res: express.Response) {
   console.log("POST /api/generate called");
@@ -434,7 +454,19 @@ async function handleGenerate(req: express.Request, res: express.Response) {
         : prompt;
 
     if (shouldUseAnthropicScriptWriter) {
-      textOutput = await generateClaudeContent(runtimePrompt);
+      try {
+        textOutput = await generateClaudeContent(runtimePrompt);
+      } catch (anthropicError: any) {
+        if (!shouldFallbackFromClaudeToGemini(anthropicError)) {
+          throw anthropicError;
+        }
+
+        console.warn(
+          "[Anthropic] Claude hit a token/rate/context limit. Falling back to Gemini 3.1 Pro Preview with Thinking HIGH for Script Writer.",
+          anthropicError?.message || anthropicError,
+        );
+        textOutput = await generateContent(runtimePrompt, false, "script_writer");
+      }
     } else {
       textOutput = await generateContent(runtimePrompt, isSupervisor, isSupervisor ? "supervisor" : stageId);
     }
