@@ -248,6 +248,36 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
   }
 }
 
+function clipPromptSection(value: string, maxChars: number): string {
+  if (!value || value.length <= maxChars) {
+    return value || "";
+  }
+
+  const headChars = Math.floor(maxChars * 0.68);
+  const tailChars = Math.floor(maxChars * 0.24);
+  return `${value.slice(0, headChars)}
+
+[...SECTION COMPACTED...]
+
+${value.slice(-tailChars)}`;
+}
+
+function extractPromptSection(
+  prompt: string,
+  startMarker: string,
+  endMarkers: string[],
+): string {
+  const start = prompt.indexOf(startMarker);
+  if (start < 0) return "";
+
+  const end = endMarkers
+    .map((marker) => prompt.indexOf(marker, start + startMarker.length))
+    .filter((idx) => idx > start)
+    .sort((a, b) => a - b)[0];
+
+  return prompt.slice(start, end || prompt.length).trim();
+}
+
 function compactClaudePrompt(prompt: string): string {
   const maxChars = Number(process.env.ANTHROPIC_MAX_INPUT_CHARS || 24000);
   const safeMaxChars =
@@ -257,13 +287,67 @@ function compactClaudePrompt(prompt: string): string {
     return prompt;
   }
 
-  const headChars = Math.floor(safeMaxChars * 0.36);
-  const tailChars = Math.floor(safeMaxChars * 0.58);
-  const compacted = `${prompt.slice(0, headChars)}
+  const liteSections = [
+    clipPromptSection(
+      extractPromptSection(prompt, "### 1. LOCKED STORY CONTRACT", [
+        "### 2. APPROVED STORY PLAN",
+      ]),
+      3200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
+        "### 3. CURRENT PART TITLE & PURPOSE",
+      ]),
+      4200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 3. CURRENT PART TITLE & PURPOSE", [
+        "### 4. CURRENT PART SCENE CARDS ONLY",
+      ]),
+      1200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 4. CURRENT PART SCENE CARDS ONLY", [
+        "### 5. PREVIOUS APPROVED PARTS RECAP",
+      ]),
+      4300,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 5. PREVIOUS APPROVED PARTS RECAP", [
+        "### 6. STYLE DNA",
+      ]),
+      1600,
+    ),
+    extractPromptSection(prompt, "### 6. STYLE DNA", [
+      "### 7. SHAPED VOICE STYLE SAMPLE",
+    ]),
+    extractPromptSection(prompt, "### 7. SHAPED VOICE STYLE SAMPLE", [
+      "### 8. MINIMAL HARD RULES",
+    ]),
+    extractPromptSection(prompt, "### 8. MINIMAL HARD RULES", [
+      "=== CURRENT PART ANCHOR ===",
+    ]),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== CURRENT PART ANCHOR ===", [
+        "=== FINAL RUNTIME WRITER CORE ===",
+      ]),
+      3600,
+    ),
+    extractPromptSection(prompt, "=== FINAL RUNTIME WRITER CORE ===", []),
+  ].filter((section) => section.trim().length > 0);
+
+  const structuredCompacted = liteSections.join(
+    "\n\n[...LONG CONTEXT REMOVED TO STAY UNDER ANTHROPIC TPM LIMITS...]\n\n",
+  );
+
+  const compacted =
+    structuredCompacted.length > 0 && structuredCompacted.length <= safeMaxChars
+      ? structuredCompacted
+      : `${prompt.slice(0, Math.floor(safeMaxChars * 0.36))}
 
 [...SERVER-SIDE PROMPT COMPACTION: long reference/history sections were removed to stay under Anthropic TPM limits. Preserve current part, locked plan, scene cards, and runtime writer core...]
 
-${prompt.slice(-tailChars)}`;
+${prompt.slice(-Math.floor(safeMaxChars * 0.58))}`;
 
   console.warn(
     `[Anthropic] Prompt compacted from ${prompt.length} to ${compacted.length} characters.`,
