@@ -136,6 +136,8 @@ For every part:
 - first identify the requested current part number and title from the prompt, then write only that part;
 - if the prompt says Part One, write Part One only; if it says Part Five, write Part Five only;
 - do not summarize previous parts and do not jump ahead to future parts;
+- build a private name ledger from the locked story contract, plan, and scene cards, then use exact spellings only;
+- never rename characters, places, organizations, tools, foods, debts, guilds, or antagonists mid-script;
 - preserve the first-person competitor-style rhythm: fast, direct, visual, practical, and emotionally pressured;
 - follow the current part scene cards in order;
 - write from inside the protagonist's head using I / my / we naturally;
@@ -151,6 +153,8 @@ Forbidden output:
 - no academic/clinical/technical report tone;
 - no generic "little did I know" or empty destiny prose;
 - no copying reference plots, names, scenes, powers, or twists.
+- no Cyrillic words, mixed Cyrillic/Latin words, broken foreign words, or accidental untranslated words inside English script paragraphs;
+- no one-line fragment paragraphs under 120 characters; merge short punch lines with adjacent action or reaction unless it is a part heading.
 
 Output only the plain .txt file body for this current part.
 `;
@@ -659,6 +663,135 @@ function shouldFallbackFromClaudeToGemini(error: any): boolean {
   );
 }
 
+function isScriptHeading(block: string): boolean {
+  return /^\s*(?:part|chapter)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(block);
+}
+
+function mergeShortScriptParagraphs(text: string): string {
+  const minChars = 115;
+  const maxMergedChars = 235;
+  const blocks = text
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((block) => block.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+
+  const merged: string[] = [];
+
+  for (const block of blocks) {
+    if (isScriptHeading(block)) {
+      merged.push(block);
+      continue;
+    }
+
+    const previous = merged[merged.length - 1];
+    const canMergeWithPrevious =
+      previous &&
+      !isScriptHeading(previous) &&
+      (previous.length < minChars || block.length < minChars) &&
+      `${previous} ${block}`.length <= maxMergedChars;
+
+    if (canMergeWithPrevious) {
+      merged[merged.length - 1] = `${previous} ${block}`;
+    } else {
+      merged.push(block);
+    }
+  }
+
+  return merged.join("\n\n");
+}
+
+function fixKnownMixedAlphabetArtifacts(text: string): string {
+  return text
+    .replace(/\bt\u0435\u043b\u0435\u0436\u043a\u0430\b/gi, "cart")
+    .replace(/\b\u0442\u0435\u043b\u0435\u0436\u043a\u0430\b/gi, "cart");
+}
+
+const NAME_STOPWORDS = new Set([
+  "Action", "After", "Again", "All", "And", "Anchor", "Approved", "Before",
+  "Cards", "Character", "Characters", "Chapter", "Claude", "Clean", "Contract",
+  "Current", "English", "Every", "Final", "Forbidden", "From", "Generate",
+  "Genre", "Hard", "High", "Into", "Locked", "Manga", "Manhwa", "Minimal",
+  "Only", "Output", "Paragraph", "Part", "Plan", "Previous", "Prompt", "Recap",
+  "Rules", "Runtime", "Scene", "Scenes", "Script", "Section", "Source", "Stage",
+  "Story", "Style", "The", "This", "Title", "Use", "Voice", "Writer", "Write",
+  "Writing", "You", "Your",
+]);
+
+function extractNameLedger(prompt: string): string[] {
+  const counts = new Map<string, number>();
+  const matches = prompt.match(/\b[A-Z][a-zA-Z]{2,15}\b/g) || [];
+
+  for (const token of matches) {
+    if (NAME_STOPWORDS.has(token)) continue;
+    counts.set(token, (counts.get(token) || 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count >= 2)
+    .map(([token]) => token);
+}
+
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+  for (let i = 0; i < rows; i += 1) dp[i][0] = i;
+  for (let j = 0; j < cols; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      );
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+function normalizeNameVariants(text: string, prompt: string): string {
+  const ledger = extractNameLedger(prompt);
+  if (ledger.length === 0) return text;
+
+  const ledgerSet = new Set(ledger);
+  return text.replace(/\b[A-Z][a-zA-Z]{2,15}\b/g, (token) => {
+    if (ledgerSet.has(token) || NAME_STOPWORDS.has(token)) return token;
+
+    let bestMatch = "";
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const name of ledger) {
+      if (name[0] !== token[0]) continue;
+      if (Math.abs(name.length - token.length) > 2) continue;
+      const distance = editDistance(token.toLowerCase(), name.toLowerCase());
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestMatch = name;
+      }
+    }
+
+    return bestMatch && bestDistance <= 2 ? bestMatch : token;
+  });
+}
+
+function normalizeScriptWriterOutput(text: string, prompt: string): string {
+  const normalized = mergeShortScriptParagraphs(
+    normalizeNameVariants(fixKnownMixedAlphabetArtifacts(text), prompt),
+  );
+
+  if (normalized !== text) {
+    console.log(
+      `[Script Writer Postprocess] Normalized output from ${text.length} to ${normalized.length} chars.`,
+    );
+  }
+
+  return normalized;
+}
+
 // Unified generate/RPC route
 async function handleGenerate(req: express.Request, res: express.Response) {
   console.log("POST /api/generate called");
@@ -708,6 +841,10 @@ async function handleGenerate(req: express.Request, res: express.Response) {
       }
     } else {
       textOutput = await generateContent(runtimePrompt, isSupervisor, isSupervisor ? "supervisor" : stageId);
+    }
+
+    if (!isSupervisor && stageId === "script_writer") {
+      textOutput = normalizeScriptWriterOutput(textOutput, runtimePrompt);
     }
 
     if (!isSupervisor && stageId === "scene_cards" && textOutput.trim().length > 0) {
