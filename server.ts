@@ -116,10 +116,22 @@ Write the current part as an English first-person manga/manhwa recap script.
 Use the approved Story Plan and current Scene Cards as the source of truth.
 Treat the response as the exact body of a plain .txt file for the current script part.
 Do not describe the file, do not provide a filename, do not wrap the answer in a code block, and do not write any explanation before or after the script text.
-Do not fight the prompt with old formatting police rules. Draft paragraphs may be natural voiceover frames; exact paragraph length is not a blocking goal during Script Writer.
+Do not fight the prompt with old formatting police rules. Paragraph length is a writing target, not a reason to explain or self-report.
+
+Paragraph and part length reminder:
+- each normal narrator paragraph should be 120-220 characters including spaces;
+- 120-220 characters is usually about 22-40 English words;
+- the best target is 26-34 words per paragraph, around 150-190 characters;
+- if the target video is 30+ minutes and the plan has nine parts, aim for about 2700-3500 characters per part including spaces;
+- that usually means about 14-20 voiceover paragraphs per part;
+- for a shorter 15-20 minute script, aim for about 1400-2000 characters per part;
+- for a 20-30 minute script, aim for about 2000-2800 characters per part;
+- if the number of parts is not nine, scale the part length naturally so every part carries its share of the full target length.
 
 For every part:
-- write only the requested current part, for example Part One means Part One only;
+- first identify the requested current part number and title from the prompt, then write only that part;
+- if the prompt says Part One, write Part One only; if it says Part Five, write Part Five only;
+- do not summarize previous parts and do not jump ahead to future parts;
 - preserve the first-person competitor-style rhythm: fast, direct, visual, practical, and emotionally pressured;
 - follow the current part scene cards in order;
 - write from inside the protagonist's head using I / my / we naturally;
