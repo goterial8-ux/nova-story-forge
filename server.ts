@@ -41,7 +41,7 @@ interface SupervisorReport {
 
 function parseSupervisorReport(text: string): SupervisorReport {
   console.log("[Vertex AI] Parsing supervisor response...");
-
+  
   // Try parsing directly as JSON
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -215,7 +215,7 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
   try {
     const modeDesc = thinkingLevel ? ` (Thinking: ${thinkingLevel})` : "";
     console.log(`[Vertex AI] Requesting ${modelName}${modeDesc} for stage: ${stageId || "default"}`);
-
+    
     let response;
     try {
       response = await ai.models.generateContent({
@@ -229,7 +229,7 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
         console.warn(`[Vertex AI Warning] ${modelName} with thinkingLevel ${thinkingLevel} is not supported or failed. Retrying without thinkingConfig...`);
         const retryConfig = { ...config };
         delete retryConfig.thinkingConfig;
-
+        
         response = await ai.models.generateContent({
           model: modelName,
           contents: finalPrompt,
@@ -248,12 +248,37 @@ async function generateContent(prompt: string, expectJson: boolean = false, stag
   }
 }
 
+function compactClaudePrompt(prompt: string): string {
+  const maxChars = Number(process.env.ANTHROPIC_MAX_INPUT_CHARS || 24000);
+  const safeMaxChars =
+    Number.isFinite(maxChars) && maxChars >= 12000 ? maxChars : 24000;
+
+  if (!prompt || prompt.length <= safeMaxChars) {
+    return prompt;
+  }
+
+  const headChars = Math.floor(safeMaxChars * 0.36);
+  const tailChars = Math.floor(safeMaxChars * 0.58);
+  const compacted = `${prompt.slice(0, headChars)}
+
+[...SERVER-SIDE PROMPT COMPACTION: long reference/history sections were removed to stay under Anthropic TPM limits. Preserve current part, locked plan, scene cards, and runtime writer core...]
+
+${prompt.slice(-tailChars)}`;
+
+  console.warn(
+    `[Anthropic] Prompt compacted from ${prompt.length} to ${compacted.length} characters.`,
+  );
+  return compacted;
+}
+
 async function generateClaudeContent(prompt: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY environment variable is required but missing.");
   }
   const model = process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
+  const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS || 5000);
+  const finalPrompt = compactClaudePrompt(prompt);
 
   console.log(`[Anthropic] Requesting messages with model ${model}...`);
   const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -265,16 +290,19 @@ async function generateClaudeContent(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: model,
-      max_tokens: 12000,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 5000,
       temperature: 0.7,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: finalPrompt }],
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
     console.error(`[Anthropic Error] Direct API call failed with status ${response.status}:`, errText);
-    throw new Error(`Anthropic API call failed: ${errText}`);
+    const error: any = new Error(`Anthropic API call failed: ${errText}`);
+    error.status = response.status;
+    error.retryAfter = response.headers.get("retry-after");
+    throw error;
   }
 
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
@@ -307,7 +335,7 @@ async function handleGenerate(req: express.Request, res: express.Response) {
         parsed: localReport,
       });
     }
-
+    
     let textOutput: string;
     const shouldUseAnthropicScriptWriter =
       !isSupervisor &&
@@ -350,9 +378,16 @@ async function handleGenerate(req: express.Request, res: express.Response) {
         errMsg = String(error);
       }
     }
-    return res.status(500).json({
+    const isRateLimit =
+      error?.status === 429 ||
+      String(errMsg).includes("rate_limit_error") ||
+      String(errMsg).toLowerCase().includes("rate limit") ||
+      String(errMsg).includes("input tokens per minute");
+
+    return res.status(isRateLimit ? 429 : 500).json({
       success: false,
-      error: errMsg
+      error: isRateLimit ? `429 RATE_LIMIT: ${errMsg}` : errMsg,
+      retryAfter: error?.retryAfter || null,
     });
   }
 }
