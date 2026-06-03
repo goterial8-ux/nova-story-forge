@@ -108,6 +108,8 @@ function parseSupervisorReport(text: string): SupervisorReport {
 
 const AI_SUPERVISED_STAGES = new Set(["story_plan", "scene_cards"]);
 
+let latestSceneCardsText = "";
+
 const SCRIPT_WRITER_RUNTIME_CORE = `
 === FINAL RUNTIME WRITER CORE ===
 This is the last and strongest instruction for Script Writer.
@@ -448,33 +450,76 @@ function extractPartSectionByNumber(text: string, partNumber: number): string {
   return text.slice(start, next ? next.index : text.length).trim();
 }
 
-function hydrateCurrentPartPlan(prompt: string): string {
-  if (prompt.includes("Current Part Plan Slice:")) {
-    return prompt;
-  }
+function isWeakCurrentSceneCardsSection(section: string): boolean {
+  const lower = section.toLowerCase();
+  return (
+    section.trim().length < 220 ||
+    lower.includes("scenes for part") ||
+    lower.includes("scenes for ") ||
+    lower.includes("no scene cards specified")
+  );
+}
 
+function replacePromptSection(
+  prompt: string,
+  startMarker: string,
+  endMarkers: string[],
+  replacement: string,
+): string {
+  const current = extractPromptSection(prompt, startMarker, endMarkers);
+  if (!current) return prompt;
+  return prompt.replace(current, replacement.trim());
+}
+
+function hydrateCurrentPartContext(prompt: string): string {
   const partNumber = detectCurrentPartNumber(prompt);
   if (!partNumber) {
     return prompt;
   }
 
-  const storyPlan = extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
-    "### 3. CURRENT PART TITLE & PURPOSE",
-  ]);
-  const partPlan = extractPartSectionByNumber(storyPlan, partNumber);
-  if (!partPlan) {
-    return prompt;
+  if (prompt.includes("Current Part Plan Slice:")) {
+    // Already hydrated by the frontend or a newer PromptBuilder.
+  } else {
+    const storyPlan = extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
+      "### 3. CURRENT PART TITLE & PURPOSE",
+    ]);
+    const partPlan = extractPartSectionByNumber(storyPlan, partNumber);
+    if (partPlan) {
+      console.warn(`[Server Prompt Hydration] Injected current Part ${partNumber} plan slice before Claude compaction.`);
+      prompt = prompt.replace(
+        "### 4. CURRENT PART SCENE CARDS ONLY",
+        `Current Part Plan Slice:\n${clipPromptSection(partPlan, 5200)}\n\n### 4. CURRENT PART SCENE CARDS ONLY`,
+      );
+    }
   }
 
-  console.warn(`[Server Prompt Hydration] Injected current Part ${partNumber} plan slice before Claude compaction.`);
-  return prompt.replace(
-    "### 4. CURRENT PART SCENE CARDS ONLY",
-    `Current Part Plan Slice:\n${clipPromptSection(partPlan, 5200)}\n\n### 4. CURRENT PART SCENE CARDS ONLY`,
-  );
+  const currentSceneCardsSection = extractPromptSection(prompt, "### 4. CURRENT PART SCENE CARDS ONLY", [
+    "### 5. PREVIOUS APPROVED PARTS RECAP",
+  ]);
+  const hasWeakSceneCards = currentSceneCardsSection && isWeakCurrentSceneCardsSection(currentSceneCardsSection);
+
+  if (hasWeakSceneCards && latestSceneCardsText) {
+    const extractedSceneCards = extractPartSectionByNumber(
+      latestSceneCardsText,
+      partNumber,
+    );
+
+    if (extractedSceneCards) {
+      console.warn(`[Server Prompt Hydration] Replaced weak Part ${partNumber} scene-card placeholder with cached Stage Four scene cards.`);
+      prompt = replacePromptSection(
+        prompt,
+        "### 4. CURRENT PART SCENE CARDS ONLY",
+        ["### 5. PREVIOUS APPROVED PARTS RECAP"],
+        `### 4. CURRENT PART SCENE CARDS ONLY\n${clipPromptSection(extractedSceneCards, 7000)}`,
+      );
+    }
+  }
+
+  return prompt;
 }
 
 function compactClaudePrompt(prompt: string): string {
-  prompt = hydrateCurrentPartPlan(prompt);
+  prompt = hydrateCurrentPartContext(prompt);
   const maxChars = Number(process.env.ANTHROPIC_MAX_INPUT_CHARS || 24000);
   const safeMaxChars =
     Number.isFinite(maxChars) && maxChars >= 12000 ? maxChars : 24000;
@@ -663,6 +708,11 @@ async function handleGenerate(req: express.Request, res: express.Response) {
       }
     } else {
       textOutput = await generateContent(runtimePrompt, isSupervisor, isSupervisor ? "supervisor" : stageId);
+    }
+
+    if (!isSupervisor && stageId === "scene_cards" && textOutput.trim().length > 0) {
+      latestSceneCardsText = textOutput;
+      console.log(`[Server Context Cache] Cached Stage Four scene cards (${latestSceneCardsText.length} chars) for Script Writer hydration.`);
     }
 
     let parsedResult = null;
