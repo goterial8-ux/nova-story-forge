@@ -122,11 +122,13 @@ Paragraph and part length reminder:
 - each normal narrator paragraph should be 120-220 characters including spaces;
 - 120-220 characters is usually about 22-40 English words;
 - the best target is 26-34 words per paragraph, around 150-190 characters;
-- if the target video is 30+ minutes and the plan has nine parts, aim for about 2700-3500 characters per part including spaces;
-- that usually means about 14-20 voiceover paragraphs per part;
-- for a shorter 15-20 minute script, aim for about 1400-2000 characters per part;
-- for a 20-30 minute script, aim for about 2000-2800 characters per part;
+- if the target is a long full script around 120,000 total characters and the plan has nine parts, aim for about 13,000-14,500 characters per part including spaces;
+- that usually means about 60-90 voiceover paragraphs per part;
+- for a shorter 15-20 minute script, aim for about 5,000-7,000 characters per part;
+- for a 20-30 minute script, aim for about 8,000-11,000 characters per part;
+- for a 30+ minute script without a stricter total target, aim for about 12,000-15,000 characters per part;
 - if the number of parts is not nine, scale the part length naturally so every part carries its share of the full target length.
+- do not stop at 14-20 paragraphs for a long script; continue until the current part reaches its required length while preserving scene order and voiceover quality.
 
 For every part:
 - first identify the requested current part number and title from the prompt, then write only that part;
