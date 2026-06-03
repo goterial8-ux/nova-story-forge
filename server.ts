@@ -306,7 +306,7 @@ function compactClaudePrompt(prompt: string): string {
       extractPromptSection(prompt, "### 3. CURRENT PART TITLE & PURPOSE", [
         "### 4. CURRENT PART SCENE CARDS ONLY",
       ]),
-      1200,
+      4200,
     ),
     clipPromptSection(
       extractPromptSection(prompt, "### 4. CURRENT PART SCENE CARDS ONLY", [
