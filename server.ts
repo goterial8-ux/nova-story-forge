@@ -280,7 +280,201 @@ function extractPromptSection(
   return prompt.slice(start, end || prompt.length).trim();
 }
 
+const PART_NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+  i: 1,
+  ii: 2,
+  iii: 3,
+  iv: 4,
+  v: 5,
+  vi: 6,
+  vii: 7,
+  viii: 8,
+  ix: 9,
+  x: 10,
+  один: 1,
+  два: 2,
+  три: 3,
+  четыре: 4,
+  пять: 5,
+  шесть: 6,
+  семь: 7,
+  восемь: 8,
+  девять: 9,
+  десять: 10,
+  первая: 1,
+  вторая: 2,
+  третья: 3,
+  четвертая: 4,
+  четвёртая: 4,
+  пятая: 5,
+  шестая: 6,
+  седьмая: 7,
+  восьмая: 8,
+  девятая: 9,
+  десятая: 10,
+};
+
+const PART_TOKEN_PATTERN = [
+  "three",
+  "seven",
+  "eight",
+  "four",
+  "five",
+  "nine",
+  "first",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+  "sixth",
+  "seventh",
+  "eighth",
+  "ninth",
+  "tenth",
+  "one",
+  "two",
+  "six",
+  "ten",
+  "viii",
+  "vii",
+  "iii",
+  "iv",
+  "vi",
+  "ix",
+  "ii",
+  "i",
+  "v",
+  "x",
+  "один",
+  "два",
+  "три",
+  "четыре",
+  "пять",
+  "шесть",
+  "семь",
+  "восемь",
+  "девять",
+  "десять",
+  "первая",
+  "вторая",
+  "третья",
+  "четвертая",
+  "четвёртая",
+  "пятая",
+  "шестая",
+  "седьмая",
+  "восьмая",
+  "девятая",
+  "десятая",
+  "\\d+",
+].join("|");
+
+function parsePartNumberToken(token: string): number {
+  const normalized = token.trim().toLowerCase();
+  return PART_NUMBER_WORDS[normalized] || parseInt(normalized, 10) || 0;
+}
+
+function detectCurrentPartNumber(prompt: string): number {
+  const directPatterns = [
+    /Begin drafting the text for Part\s+(\d+)/i,
+    /Write the full voiceover draft for Part\s+(\d+)/i,
+    /Current Part Number:\s*(\d+)/i,
+    /Part\s+(\d+)\s*:/i,
+  ];
+
+  for (const pattern of directPatterns) {
+    const match = prompt.match(pattern);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (parsed > 0) return parsed;
+    }
+  }
+
+  const wordMatch = prompt.match(
+    new RegExp(`Begin drafting the text for Part\\s+(${PART_TOKEN_PATTERN})`, "i"),
+  );
+  if (wordMatch) {
+    return parsePartNumberToken(wordMatch[1]);
+  }
+
+  return 0;
+}
+
+function extractPartSectionByNumber(text: string, partNumber: number): string {
+  if (!text || !partNumber) return "";
+
+  const headingRegex = new RegExp(
+    `(?:^|\\n)([ \\t]*(?:(?:${PART_TOKEN_PATTERN})\\.\\s*)?(?:part|часть)\\s+(${PART_TOKEN_PATTERN})\\b[^\\n]*)`,
+    "gi",
+  );
+  const headings: Array<{ index: number; number: number }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = headingRegex.exec(text)) !== null) {
+    const number = parsePartNumberToken(match[2]);
+    if (!number) continue;
+
+    const lineOffset = match[0].startsWith("\n") ? 1 : 0;
+    headings.push({ index: match.index + lineOffset, number });
+  }
+
+  const currentIndex = headings.findIndex((h) => h.number === partNumber);
+  if (currentIndex < 0) return "";
+
+  const start = headings[currentIndex].index;
+  const next = headings
+    .slice(currentIndex + 1)
+    .find((h) => h.number !== partNumber);
+  return text.slice(start, next ? next.index : text.length).trim();
+}
+
+function hydrateCurrentPartPlan(prompt: string): string {
+  if (prompt.includes("Current Part Plan Slice:")) {
+    return prompt;
+  }
+
+  const partNumber = detectCurrentPartNumber(prompt);
+  if (!partNumber) {
+    return prompt;
+  }
+
+  const storyPlan = extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
+    "### 3. CURRENT PART TITLE & PURPOSE",
+  ]);
+  const partPlan = extractPartSectionByNumber(storyPlan, partNumber);
+  if (!partPlan) {
+    return prompt;
+  }
+
+  console.warn(`[Server Prompt Hydration] Injected current Part ${partNumber} plan slice before Claude compaction.`);
+  return prompt.replace(
+    "### 4. CURRENT PART SCENE CARDS ONLY",
+    `Current Part Plan Slice:\n${clipPromptSection(partPlan, 5200)}\n\n### 4. CURRENT PART SCENE CARDS ONLY`,
+  );
+}
+
 function compactClaudePrompt(prompt: string): string {
+  prompt = hydrateCurrentPartPlan(prompt);
   const maxChars = Number(process.env.ANTHROPIC_MAX_INPUT_CHARS || 24000);
   const safeMaxChars =
     Number.isFinite(maxChars) && maxChars >= 12000 ? maxChars : 24000;
