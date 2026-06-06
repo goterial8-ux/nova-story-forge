@@ -37,16 +37,21 @@ This prevents good script drafts from being blocked only because draft paragraph
 
 ## AI Routing
 
-The server supports two providers:
+The server supports three provider modes:
 
 - Vertex AI / Gemini for normal stages and AI Supervisor
-- Anthropic Claude for Script Writer only when enabled
+- TKBK Claude-compatible API for Script Writer when `TKBK_API_KEY` is available
+- Anthropic Claude for Script Writer as a backward-compatible fallback
 
-Script Writer uses Claude only when this environment variable is set:
+Script Writer can be routed from the UI, or through env. Recommended TKBK setup:
 
 ```env
-SCRIPT_WRITER_PROVIDER=anthropic
+SCRIPT_WRITER_PROVIDER=tkbk
+CLAUDE_WRITER_PROVIDER=tkbk
+CLAUDE_WRITER_MODEL=claude-sonnet-4-6
 ```
+
+If no provider is supplied, the server auto-selects TKBK when `TKBK_API_KEY` exists, then Anthropic when `ANTHROPIC_API_KEY` exists, otherwise Gemini.
 
 AI Supervisor remains on Gemini / Vertex AI.
 
@@ -61,7 +66,18 @@ GOOGLE_CLOUD_LOCATION=global
 PORT=8080
 ```
 
-For Claude Script Writer:
+For TKBK Claude-compatible Script Writer:
+
+```env
+SCRIPT_WRITER_PROVIDER=tkbk
+CLAUDE_WRITER_PROVIDER=tkbk
+CLAUDE_WRITER_MODEL=claude-sonnet-4-6
+CLAUDE_WRITER_MAX_TOKENS=8000
+TKBK_CLAUDE_ENDPOINT=https://api.tkbk.io/claude/v1/messages
+TKBK_API_KEY=secret-manager-value-only
+```
+
+For direct Anthropic Claude Script Writer:
 
 ```env
 SCRIPT_WRITER_PROVIDER=anthropic
@@ -69,7 +85,7 @@ ANTHROPIC_API_KEY=your-anthropic-key
 ANTHROPIC_MODEL=your-claude-model
 ```
 
-Do not commit real API keys.
+Do not commit real API keys. In Cloud Run, store `TKBK_API_KEY` in Secret Manager and mount it as an environment variable.
 
 ## Local Run
 
