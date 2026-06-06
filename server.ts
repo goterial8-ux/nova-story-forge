@@ -723,26 +723,6 @@ async function generateTkbkClaudeContent(
   return text;
 }
 
-function shouldFallbackFromClaudeToGemini(error: any): boolean {
-  const message = String(error?.message || error || "").toLowerCase();
-  return (
-    error?.status === 429 ||
-    message.includes("rate_limit_error") ||
-    message.includes("rate limit") ||
-    message.includes("input tokens per minute") ||
-    message.includes("output tokens per minute") ||
-    message.includes("tokens per minute") ||
-    message.includes("context_length_exceeded") ||
-    message.includes("context length") ||
-    message.includes("prompt is too long") ||
-    message.includes("max_tokens") ||
-    message.includes("token limit") ||
-    message.includes("quota") ||
-    message.includes("overloaded_error") ||
-    message.includes("overloaded")
-  );
-}
-
 function isScriptHeading(block: string): boolean {
   return /^\s*(?:part|chapter)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(block);
 }
@@ -903,14 +883,23 @@ async function handleGenerate(req: express.Request, res: express.Response) {
         ? "tkbk"
         : process.env.ANTHROPIC_API_KEY
           ? "anthropic"
-          : "gemini");
+          : "tkbk");
     const selectedWriterProvider = normalizeWriterProvider(
       configuredWriterProvider,
     );
+    const isScriptWriterStage =
+      !isSupervisor && stageId === "script_writer";
+
+    if (isScriptWriterStage && selectedWriterProvider === "gemini") {
+      const configError: any = new Error(
+        "Script Writer is locked to Claude/TKBK. Set CLAUDE_WRITER_PROVIDER=tkbk and TKBK_API_KEY, or choose an Anthropic Claude provider. Gemini fallback is disabled for script writing.",
+      );
+      configError.status = 400;
+      throw configError;
+    }
+
     const shouldUseClaudeScriptWriter =
-      !isSupervisor &&
-      stageId === "script_writer" &&
-      selectedWriterProvider !== "gemini";
+      isScriptWriterStage && selectedWriterProvider !== "gemini";
     const shouldUseTkbkClaude =
       shouldUseClaudeScriptWriter &&
       (selectedWriterProvider === "tkbk" ||
@@ -929,15 +918,11 @@ async function handleGenerate(req: express.Request, res: express.Response) {
           ? await generateTkbkClaudeContent(runtimePrompt, writerModel)
           : await generateClaudeContent(runtimePrompt, writerModel);
       } catch (claudeError: any) {
-        if (!shouldFallbackFromClaudeToGemini(claudeError)) {
-          throw claudeError;
-        }
-
         console.warn(
-          "[Claude Writer] Claude-compatible API hit a token/rate/context limit. Falling back to Gemini 3.1 Pro Preview with Thinking HIGH for Script Writer.",
+          "[Claude Writer] Claude-compatible API failed. Gemini fallback is disabled for Script Writer; stopping generation.",
           claudeError?.message || claudeError,
         );
-        textOutput = await generateContent(runtimePrompt, false, "script_writer");
+        throw claudeError;
       }
     } else {
       textOutput = await generateContent(runtimePrompt, isSupervisor, isSupervisor ? "supervisor" : stageId);
