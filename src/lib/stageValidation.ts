@@ -110,22 +110,6 @@ export function validateStageContent(
     }
 
     case "scene_cards": {
-      checkTerms(
-        content,
-        [
-          "location",
-          ["main action", "action"],
-          ["emotion", "mood"],
-          ["visual focus", "visual"],
-          "scale",
-          ["what must be shown", "must be shown"],
-          ["what must not be shown", "must not be shown"],
-          ["continuity details", "continuity"],
-        ],
-        result,
-        "Scene Cards",
-      );
-
       const sceneCardsFound = (content.match(/Scene Card/gi) || []).length;
       result.metrics.sceneCardsDetected = sceneCardsFound;
 
