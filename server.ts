@@ -600,12 +600,38 @@ ${prompt.slice(-Math.floor(safeMaxChars * 0.58))}`;
   return compacted;
 }
 
-async function generateClaudeContent(prompt: string): Promise<string> {
+type ScriptWriterProvider = "gemini" | "tkbk" | "anthropic" | "claude";
+
+function normalizeWriterProvider(value: unknown): ScriptWriterProvider {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "gemini") return "gemini";
+  if (normalized === "tkbk") return "tkbk";
+  if (normalized === "anthropic") return "anthropic";
+  if (normalized === "claude") return "claude";
+  return "gemini";
+}
+
+function extractClaudeText(data: any): string {
+  const text = Array.isArray(data?.content)
+    ? data.content
+        .map((item: any) => (typeof item?.text === "string" ? item.text : ""))
+        .join("")
+        .trim()
+    : "";
+
+  if (!text) {
+    throw new Error("Claude-compatible API returned empty text.");
+  }
+
+  return text;
+}
+
+async function generateClaudeContent(prompt: string, modelOverride?: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY environment variable is required but missing.");
   }
-  const model = process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
+  const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
   const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS || 5000);
   const finalPrompt = compactClaudePrompt(prompt);
 
@@ -635,12 +661,66 @@ async function generateClaudeContent(prompt: string): Promise<string> {
   }
 
   const data = await response.json() as { content?: Array<{ type: string; text?: string }> };
-  if (data && data.content && data.content[0] && typeof data.content[0].text === "string") {
-    console.log(`[Anthropic] Success with ${model}`);
-    return data.content[0].text;
+  const text = extractClaudeText(data);
+  console.log(`[Anthropic] Success with ${model}`);
+  return text;
+}
+
+async function generateTkbkClaudeContent(
+  prompt: string,
+  modelOverride?: string,
+): Promise<string> {
+  const apiKey = process.env.TKBK_API_KEY;
+  if (!apiKey) {
+    throw new Error("TKBK_API_KEY environment variable is required but missing.");
   }
 
-  throw new Error("Invalid or empty response structure from Anthropic Claude API.");
+  const model =
+    modelOverride ||
+    process.env.CLAUDE_WRITER_MODEL ||
+    process.env.ANTHROPIC_MODEL ||
+    "claude-sonnet-4-6";
+  const maxTokens = Number(
+    process.env.CLAUDE_WRITER_MAX_TOKENS ||
+      process.env.ANTHROPIC_MAX_TOKENS ||
+      8000,
+  );
+  const endpoint =
+    process.env.TKBK_CLAUDE_ENDPOINT ||
+    "https://api.tkbk.io/claude/v1/messages";
+  const finalPrompt = compactClaudePrompt(prompt);
+
+  console.log(`[TKBK Claude] Requesting messages with model ${model}...`);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 8000,
+      temperature: 0.7,
+      system:
+        "You are Nova, a strict first-person manga/manhwa recap script writer. Follow the user prompt exactly and output only usable script text.",
+      messages: [{ role: "user", content: finalPrompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(`[TKBK Claude Error] API call failed with status ${response.status}:`, errText);
+    const error: any = new Error(`TKBK Claude API call failed: ${errText}`);
+    error.status = response.status;
+    error.retryAfter = response.headers.get("retry-after");
+    throw error;
+  }
+
+  const data = await response.json();
+  const text = extractClaudeText(data);
+  console.log(`[TKBK Claude] Success with ${model}`);
+  return text;
 }
 
 function shouldFallbackFromClaudeToGemini(error: any): boolean {
@@ -795,7 +875,7 @@ function normalizeScriptWriterOutput(text: string, prompt: string): string {
 // Unified generate/RPC route
 async function handleGenerate(req: express.Request, res: express.Response) {
   console.log("POST /api/generate called");
-  const { prompt, type, stageId } = req.body;
+  const { prompt, type, stageId, writerProvider, writerModel } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ success: false, error: "Prompt is required." });
@@ -815,27 +895,47 @@ async function handleGenerate(req: express.Request, res: express.Response) {
     }
     
     let textOutput: string;
-    const shouldUseAnthropicScriptWriter =
+    const configuredWriterProvider =
+      writerProvider ||
+      process.env.CLAUDE_WRITER_PROVIDER ||
+      process.env.SCRIPT_WRITER_PROVIDER ||
+      (process.env.TKBK_API_KEY
+        ? "tkbk"
+        : process.env.ANTHROPIC_API_KEY
+          ? "anthropic"
+          : "gemini");
+    const selectedWriterProvider = normalizeWriterProvider(
+      configuredWriterProvider,
+    );
+    const shouldUseClaudeScriptWriter =
       !isSupervisor &&
       stageId === "script_writer" &&
-      process.env.SCRIPT_WRITER_PROVIDER === "anthropic";
+      selectedWriterProvider !== "gemini";
+    const shouldUseTkbkClaude =
+      shouldUseClaudeScriptWriter &&
+      (selectedWriterProvider === "tkbk" ||
+        ((selectedWriterProvider === "claude" ||
+          selectedWriterProvider === "anthropic") &&
+          !!process.env.TKBK_API_KEY));
 
     const runtimePrompt =
       !isSupervisor && stageId === "script_writer"
         ? `${prompt}\n\n${SCRIPT_WRITER_RUNTIME_CORE}`
         : prompt;
 
-    if (shouldUseAnthropicScriptWriter) {
+    if (shouldUseClaudeScriptWriter) {
       try {
-        textOutput = await generateClaudeContent(runtimePrompt);
-      } catch (anthropicError: any) {
-        if (!shouldFallbackFromClaudeToGemini(anthropicError)) {
-          throw anthropicError;
+        textOutput = shouldUseTkbkClaude
+          ? await generateTkbkClaudeContent(runtimePrompt, writerModel)
+          : await generateClaudeContent(runtimePrompt, writerModel);
+      } catch (claudeError: any) {
+        if (!shouldFallbackFromClaudeToGemini(claudeError)) {
+          throw claudeError;
         }
 
         console.warn(
-          "[Anthropic] Claude hit a token/rate/context limit. Falling back to Gemini 3.1 Pro Preview with Thinking HIGH for Script Writer.",
-          anthropicError?.message || anthropicError,
+          "[Claude Writer] Claude-compatible API hit a token/rate/context limit. Falling back to Gemini 3.1 Pro Preview with Thinking HIGH for Script Writer.",
+          claudeError?.message || claudeError,
         );
         textOutput = await generateContent(runtimePrompt, false, "script_writer");
       }
