@@ -600,14 +600,32 @@ ${prompt.slice(-Math.floor(safeMaxChars * 0.58))}`;
   return compacted;
 }
 
-type ScriptWriterProvider = "gemini" | "tkbk" | "anthropic" | "claude";
+type ScriptWriterProvider =
+  | "gemini"
+  | "claude_compatible"
+  | "aiprimetech"
+  | "tkbk"
+  | "anthropic"
+  | "claude";
 
 function normalizeWriterProvider(value: unknown): ScriptWriterProvider {
   const normalized = String(value || "").trim().toLowerCase();
+
   if (normalized === "gemini") return "gemini";
+  if (
+    normalized === "claude_compatible" ||
+    normalized === "claude-compatible" ||
+    normalized === "compatible"
+  ) {
+    return "claude_compatible";
+  }
+  if (normalized === "aiprimetech" || normalized === "ai_prime" || normalized === "ai-prime") {
+    return "aiprimetech";
+  }
   if (normalized === "tkbk") return "tkbk";
   if (normalized === "anthropic") return "anthropic";
   if (normalized === "claude") return "claude";
+
   return "gemini";
 }
 
@@ -626,20 +644,121 @@ function extractClaudeText(data: any): string {
   return text;
 }
 
+function getClaudeCompatibleApiKey(): string {
+  return (
+    process.env.CLAUDE_COMPAT_API_KEY ||
+    process.env.TKBK_API_KEY ||
+    ""
+  ).trim();
+}
+
+function getClaudeCompatibleBaseUrl(): string {
+  return (
+    process.env.CLAUDE_COMPAT_BASE_URL ||
+    process.env.TKBK_BASE_URL ||
+    "https://api.tkbk.io"
+  ).replace(/\/$/, "");
+}
+
+function getClaudeCompatibleEndpoint(): string {
+  const explicitEndpoint =
+    process.env.CLAUDE_COMPAT_MESSAGES_ENDPOINT ||
+    process.env.TKBK_CLAUDE_ENDPOINT;
+
+  if (explicitEndpoint) {
+    return explicitEndpoint;
+  }
+
+  const baseUrl = getClaudeCompatibleBaseUrl();
+
+  if (baseUrl.includes("api.tkbk.io")) {
+    return `${baseUrl}/claude/v1/messages`;
+  }
+
+  return `${baseUrl}/messages`;
+}
+
+function getClaudeWriterModel(modelOverride?: string): string {
+  return (
+    modelOverride ||
+    process.env.CLAUDE_COMPAT_MODEL ||
+    process.env.CLAUDE_WRITER_MODEL ||
+    process.env.ANTHROPIC_MODEL ||
+    "claude-sonnet-4-6"
+  );
+}
+
+function getClaudeWriterMaxTokens(defaultValue = 8000): number {
+  const configured = Number(
+    process.env.CLAUDE_COMPAT_MAX_TOKENS ||
+      process.env.CLAUDE_WRITER_MAX_TOKENS ||
+      process.env.ANTHROPIC_MAX_TOKENS ||
+      defaultValue,
+  );
+
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : defaultValue;
+}
+
+async function generateClaudeCompatibleContent(
+  prompt: string,
+  modelOverride?: string,
+): Promise<string> {
+  const apiKey = getClaudeCompatibleApiKey();
+  if (!apiKey) {
+    throw new Error("CLAUDE_COMPAT_API_KEY or TKBK_API_KEY environment variable is required but missing.");
+  }
+
+  const model = getClaudeWriterModel(modelOverride);
+  const maxTokens = getClaudeWriterMaxTokens(8000);
+  const endpoint = getClaudeCompatibleEndpoint();
+  const finalPrompt = compactClaudePrompt(prompt);
+
+  console.log(`[Claude Compatible] Requesting ${endpoint} with model ${model}...`);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature: 0.7,
+      system:
+        "You are Nova, a strict first-person manga/manhwa recap script writer. Follow the user prompt exactly and output only usable script text.",
+      messages: [{ role: "user", content: finalPrompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(`[Claude Compatible Error] API call failed with status ${response.status}:`, errText);
+    const error: any = new Error(`Claude-compatible API call failed: ${errText}`);
+    error.status = response.status;
+    error.retryAfter = response.headers.get("retry-after");
+    throw error;
+  }
+
+  const data = await response.json();
+  const text = extractClaudeText(data);
+  console.log(`[Claude Compatible] Success with ${model}`);
+  return text;
+}
+
 async function generateClaudeContent(prompt: string, modelOverride?: string): Promise<string> {
-  // Prefer the TKBK Claude-compatible gateway whenever TKBK_API_KEY is configured.
-  // This makes Cloud Run deployments work with:
-  // SCRIPT_WRITER_PROVIDER=tkbk
-  // TKBK_API_KEY=cr_xxx
-  // TKBK_CLAUDE_ENDPOINT=https://api.tkbk.io/claude/v1/messages
-  if (process.env.TKBK_API_KEY) {
-    return generateTkbkClaudeContent(prompt, modelOverride);
+  if (getClaudeCompatibleApiKey()) {
+    return generateClaudeCompatibleContent(prompt, modelOverride);
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY or TKBK_API_KEY environment variable is required but missing.");
+    throw new Error("ANTHROPIC_API_KEY, CLAUDE_COMPAT_API_KEY, or TKBK_API_KEY environment variable is required but missing.");
   }
+
   const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
   const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS || 5000);
   const finalPrompt = compactClaudePrompt(prompt);
@@ -679,58 +798,7 @@ async function generateTkbkClaudeContent(
   prompt: string,
   modelOverride?: string,
 ): Promise<string> {
-  const apiKey = process.env.TKBK_API_KEY;
-  if (!apiKey) {
-    throw new Error("TKBK_API_KEY environment variable is required but missing.");
-  }
-
-  const model =
-    modelOverride ||
-    process.env.CLAUDE_WRITER_MODEL ||
-    process.env.ANTHROPIC_MODEL ||
-    "claude-sonnet-4-6";
-  const maxTokens = Number(
-    process.env.CLAUDE_WRITER_MAX_TOKENS ||
-      process.env.ANTHROPIC_MAX_TOKENS ||
-      8000,
-  );
-  const tkbkBaseUrl = (process.env.TKBK_BASE_URL || "https://api.tkbk.io").replace(/\/$/, "");
-  const endpoint =
-    process.env.TKBK_CLAUDE_ENDPOINT ||
-    `${tkbkBaseUrl}/claude/v1/messages`;
-  const finalPrompt = compactClaudePrompt(prompt);
-
-  console.log(`[TKBK Claude] Requesting messages with model ${model}...`);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 8000,
-      temperature: 0.7,
-      system:
-        "You are Nova, a strict first-person manga/manhwa recap script writer. Follow the user prompt exactly and output only usable script text.",
-      messages: [{ role: "user", content: finalPrompt }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error(`[TKBK Claude Error] API call failed with status ${response.status}:`, errText);
-    const error: any = new Error(`TKBK Claude API call failed: ${errText}`);
-    error.status = response.status;
-    error.retryAfter = response.headers.get("retry-after");
-    throw error;
-  }
-
-  const data = await response.json();
-  const text = extractClaudeText(data);
-  console.log(`[TKBK Claude] Success with ${model}`);
-  return text;
+  return generateClaudeCompatibleContent(prompt, modelOverride);
 }
 
 function isScriptHeading(block: string): boolean {
@@ -889,11 +957,11 @@ async function handleGenerate(req: express.Request, res: express.Response) {
       writerProvider ||
       process.env.CLAUDE_WRITER_PROVIDER ||
       process.env.SCRIPT_WRITER_PROVIDER ||
-      (process.env.TKBK_API_KEY
-        ? "tkbk"
+      (process.env.CLAUDE_COMPAT_API_KEY || process.env.TKBK_API_KEY
+        ? "claude_compatible"
         : process.env.ANTHROPIC_API_KEY
           ? "anthropic"
-          : "tkbk");
+          : "claude_compatible");
     const selectedWriterProvider = normalizeWriterProvider(
       configuredWriterProvider,
     );
@@ -902,7 +970,7 @@ async function handleGenerate(req: express.Request, res: express.Response) {
 
     if (isScriptWriterStage && selectedWriterProvider === "gemini") {
       const configError: any = new Error(
-        "Script Writer is locked to Claude/TKBK. Set CLAUDE_WRITER_PROVIDER=tkbk and TKBK_API_KEY, or choose an Anthropic Claude provider. Gemini fallback is disabled for script writing.",
+        "Script Writer is locked to a Claude-compatible provider. Set CLAUDE_WRITER_PROVIDER=claude_compatible and CLAUDE_COMPAT_API_KEY, or use TKBK_API_KEY / ANTHROPIC_API_KEY. Gemini fallback is disabled for script writing.",
       );
       configError.status = 400;
       throw configError;
@@ -910,12 +978,14 @@ async function handleGenerate(req: express.Request, res: express.Response) {
 
     const shouldUseClaudeScriptWriter =
       isScriptWriterStage && selectedWriterProvider !== "gemini";
-    const shouldUseTkbkClaude =
+    const shouldUseClaudeCompatible =
       shouldUseClaudeScriptWriter &&
-      (selectedWriterProvider === "tkbk" ||
+      (selectedWriterProvider === "claude_compatible" ||
+        selectedWriterProvider === "aiprimetech" ||
+        selectedWriterProvider === "tkbk" ||
         ((selectedWriterProvider === "claude" ||
           selectedWriterProvider === "anthropic") &&
-          !!process.env.TKBK_API_KEY));
+          !!getClaudeCompatibleApiKey()));
 
     const runtimePrompt =
       !isSupervisor && stageId === "script_writer"
@@ -924,8 +994,8 @@ async function handleGenerate(req: express.Request, res: express.Response) {
 
     if (shouldUseClaudeScriptWriter) {
       try {
-        textOutput = shouldUseTkbkClaude
-          ? await generateTkbkClaudeContent(runtimePrompt, writerModel)
+        textOutput = shouldUseClaudeCompatible
+          ? await generateClaudeCompatibleContent(runtimePrompt, writerModel)
           : await generateClaudeContent(runtimePrompt, writerModel);
       } catch (claudeError: any) {
         console.warn(
