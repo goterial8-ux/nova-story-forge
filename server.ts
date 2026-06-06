@@ -627,9 +627,18 @@ function extractClaudeText(data: any): string {
 }
 
 async function generateClaudeContent(prompt: string, modelOverride?: string): Promise<string> {
+  // Prefer the TKBK Claude-compatible gateway whenever TKBK_API_KEY is configured.
+  // This makes Cloud Run deployments work with:
+  // SCRIPT_WRITER_PROVIDER=tkbk
+  // TKBK_API_KEY=cr_xxx
+  // TKBK_CLAUDE_ENDPOINT=https://api.tkbk.io/claude/v1/messages
+  if (process.env.TKBK_API_KEY) {
+    return generateTkbkClaudeContent(prompt, modelOverride);
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY environment variable is required but missing.");
+    throw new Error("ANTHROPIC_API_KEY or TKBK_API_KEY environment variable is required but missing.");
   }
   const model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-20241022";
   const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS || 5000);
@@ -685,9 +694,10 @@ async function generateTkbkClaudeContent(
       process.env.ANTHROPIC_MAX_TOKENS ||
       8000,
   );
+  const tkbkBaseUrl = (process.env.TKBK_BASE_URL || "https://api.tkbk.io").replace(/\/$/, "");
   const endpoint =
     process.env.TKBK_CLAUDE_ENDPOINT ||
-    "https://api.tkbk.io/claude/v1/messages";
+    `${tkbkBaseUrl}/claude/v1/messages`;
   const finalPrompt = compactClaudePrompt(prompt);
 
   console.log(`[TKBK Claude] Requesting messages with model ${model}...`);
