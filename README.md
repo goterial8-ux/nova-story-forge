@@ -41,7 +41,7 @@ The server supports three provider modes:
 
 - Vertex AI / Gemini for normal stages and AI Supervisor
 - TKBK Claude-compatible API for Script Writer when `TKBK_API_KEY` is available
-- Anthropic Claude for Script Writer as a backward-compatible fallback
+- Anthropic Claude for Script Writer when configured directly
 
 Script Writer can be routed from the UI, or through env. Recommended TKBK setup:
 
@@ -51,7 +51,9 @@ CLAUDE_WRITER_PROVIDER=tkbk
 CLAUDE_WRITER_MODEL=claude-sonnet-4-6
 ```
 
-If no provider is supplied, the server auto-selects TKBK when `TKBK_API_KEY` exists, then Anthropic when `ANTHROPIC_API_KEY` exists, otherwise Gemini.
+Script Writer is locked to Claude-compatible providers. If Claude/TKBK hits a rate limit, token limit, or API error, generation stops with an error instead of silently falling back to Gemini.
+
+If no provider is supplied, the server auto-selects TKBK when `TKBK_API_KEY` exists, then Anthropic when `ANTHROPIC_API_KEY` exists. Without a Claude-compatible key, Script Writer fails fast instead of using Gemini.
 
 AI Supervisor remains on Gemini / Vertex AI.
 
