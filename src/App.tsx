@@ -1747,15 +1747,20 @@ export default function App() {
   };
 
   const handleGenerateAllParts = async () => {
-    const currentAP = stateRef.current.autopilotState;
-    if (!currentAP) return;
+    const currentParts = stateRef.current.scriptParts || [];
 
-    // Find the first non-approved part
-    const firstNotApproved = stateRef.current.scriptParts.findIndex(
-      (p) => p.status !== "approved",
+    if (currentParts.length === 0) {
+      setWarningMessage("No script parts found. Sync parts from Story Plan first.");
+      setTimeout(() => setWarningMessage(null), 4000);
+      return;
+    }
+
+    const firstEmptyIndex = currentParts.findIndex(
+      (p) => !String(p.draftText || "").trim(),
     );
-    if (firstNotApproved === -1) {
-      setWarningMessage("All parts are already approved.");
+
+    if (firstEmptyIndex === -1) {
+      setWarningMessage("All parts already have generated text.");
       setTimeout(() => setWarningMessage(null), 3000);
       return;
     }
@@ -1764,18 +1769,46 @@ export default function App() {
     stopRequestedRef.current = false;
     setIsBatchGenerating(true);
 
-    updateState({
-      autopilotState: {
-        ...currentAP,
-        enabled: true,
-        currentPartIndex: firstNotApproved,
-        currentStep: stateRef.current.scriptParts[firstNotApproved].draftText
-          ? "check"
-          : "generate",
-        lastError: null,
-        retryAfterAt: null,
-      },
-    });
+    try {
+      for (let i = firstEmptyIndex; i < stateRef.current.scriptParts.length; i += 1) {
+        if (stopRequestedRef.current) {
+          setWarningMessage("Simple auto-generation stopped by user.");
+          setTimeout(() => setWarningMessage(null), 4000);
+          break;
+        }
+
+        const currentPart = stateRef.current.scriptParts[i];
+        if (!currentPart) continue;
+
+        // Simple mode behaves like manual writing:
+        // it only writes missing parts and does not run supervisor/check/repair/rebuild.
+        if (String(currentPart.draftText || "").trim()) continue;
+
+        setWarningMessage(`Auto-writing Part ${currentPart.partNumber}...`);
+        const success = await handleGeneratePart(i);
+
+        if (!success) {
+          setWarningMessage(
+            `Simple auto-generation stopped at Part ${currentPart.partNumber}.`,
+          );
+          setTimeout(() => setWarningMessage(null), 5000);
+          break;
+        }
+
+        if (i < stateRef.current.scriptParts.length - 1 && !stopRequestedRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      if (!stopRequestedRef.current) {
+        setWarningMessage("Simple auto-generation finished.");
+        setTimeout(() => setWarningMessage(null), 4000);
+      }
+    } finally {
+      setIsBatchGenerating(false);
+      stopRequestedRef.current = false;
+      setStopRequested(false);
+    }
   };
 
   const handleStopBatchGeneration = () => {

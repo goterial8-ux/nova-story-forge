@@ -189,6 +189,8 @@ export function ScriptWriterPanel({
   parts,
   updatePart,
   onGeneratePart,
+  onGenerateAllParts,
+  onStopBatchGeneration,
   onClearAllParts,
   onInitScriptParts,
   onClearPart,
@@ -262,6 +264,14 @@ export function ScriptWriterPanel({
             <button onClick={onInitScriptParts} className="px-3 py-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm">
               <RefreshCw className="w-3.5 h-3.5" /> Sync Parts
             </button>
+            <button onClick={onGenerateAllParts} disabled={isBatchGenerating} className="px-3 py-2 bg-slate-900 text-white border border-slate-900 hover:bg-slate-800 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm disabled:opacity-50">
+              <Wand2 className="w-3.5 h-3.5" /> Auto Generate Missing
+            </button>
+            {isBatchGenerating && (
+              <button onClick={onStopBatchGeneration} className="px-3 py-2 bg-white text-orange-700 border border-orange-200 hover:bg-orange-50 text-xs font-bold uppercase tracking-wide rounded-sm">
+                Stop
+              </button>
+            )}
             <button onClick={onClearAllParts} disabled={isBatchGenerating} className="px-3 py-2 bg-white text-red-600 border border-red-200 hover:bg-red-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm disabled:opacity-50">
               <Eraser className="w-3.5 h-3.5" /> Clear All Outputs
             </button>
