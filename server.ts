@@ -631,15 +631,9 @@ function compactClaudePrompt(prompt: string): string {
   ].filter((section) => section.trim().length > 0);
 
   const selectedSections = modernSections.length >= 3 ? modernSections : legacySections;
-  const structuredCompacted = selectedSections.join(
-    "
+  const structuredCompacted = selectedSections.join("\n\n[...LONG CONTEXT REMOVED TO STAY UNDER PROVIDER INPUT LIMITS...]\n\n");
 
-[...LONG CONTEXT REMOVED TO STAY UNDER PROVIDER INPUT LIMITS...]
-
-",
-  );
-
-  const compacted =
+const compacted =
     structuredCompacted.length > 0 && structuredCompacted.length <= safeMaxChars
       ? structuredCompacted
       : `${prompt.slice(0, Math.floor(safeMaxChars * 0.42))}
