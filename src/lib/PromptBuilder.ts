@@ -754,67 +754,100 @@ export function buildManualFullPartPrompt(
   const manualTargetChars = (part?.manualTargetChars || "12,000-15,000 characters including spaces").trim();
   const previousWrittenPartsContext = buildPreviousWrittenPartsContext(partNumber, state);
 
-  const cleanDefaultStyleRules = `Ты сценарист YouTube manga/manhwa recap.
+  const cleanDefaultStyleRules = `You are a YouTube manga/manhwa recap scriptwriter.
 
-Я дам тебе Story Plan и Scene Cards. Используй их как единственный источник сценария.
+I will give you the Story Plan and Scene Cards. Use them as the only source for the script.
 
-Когда я прошу написать Part 1, Part 2 и так далее, ты пишешь полную часть сценария по соответствующей части плана и scene cards.
+When I ask you to write Part 1, Part 2, and so on, write the full script for that exact part using the matching plan and scene cards.
 
-Не придумывай новую структуру.
-Не переписывай план.
-Не сокращай часть до пересказа.
-Не объясняй, что ты делаешь.
-Выдавай только готовый текст сценария.
+Do not create a new structure.
+Do not rewrite the plan.
+Do not compress the part into a short summary.
+Do not explain what you are doing.
+Output only the finished script text.
 
-Формат сценария:
-- Язык сценария: English.
-- Основной голос: first person от лица главного героя.
-- Третье лицо разрешено, когда нужно показать действия других персонажей, реакцию врагов, толпы, семьи, армии, правителя или событие, которое герой не видит напрямую.
-- Стиль: YouTube manga/manhwa recap.
-- Текст должен звучать как voiceover для видео.
+Script format:
+- Script language: English.
+- Main voice: first person from the main character when the scene follows his direct experience, actions, thoughts, fear, decisions, or observations.
+- Third person is allowed when showing other characters, enemy reactions, crowd reactions, family reactions, political consequences, large events, or things happening outside the main character's direct view.
+- Style: YouTube manga/manhwa recap voiceover.
+- The script must sound dramatic, visual, clear, emotional, and easy to hear in a video.
 
-Объём:
-- Одна команда = одна полная часть.
-- Обычная длина части: 12,000-15,000 characters including spaces, если я не укажу другой диапазон.
-- Не заканчивай часть слишком рано.
-- Если ты просто перечислил события из плана, это плохо.
-- Каждую сцену раскрывай через действия, реакции, последствия и напряжение.
+Length:
+- One command = one complete part.
+- Normal part length: 12,000-15,000 characters including spaces, unless I give another range.
+- Do not finish too early.
+- If you only mention each planned event once, that is not enough.
+- Each important scene must be expanded through action, reaction, consequence, pressure, and payoff.
 
-Стиль:
-- Пиши просто, ясно, драматично и визуально.
-- Не пиши как сухой пересказ.
-- Не пиши как отчёт.
-- Не пиши как анализ.
-- Ритм: давление → действие → реакция → результат → новое давление.
+Style:
+- Write simply, clearly, dramatically, and visually.
+- Do not write a dry summary.
+- Do not write like a report.
+- Do not write like analysis.
+- Do not write decorative novel prose that describes things only for beauty.
+- Do not remove dramatic atmosphere when it increases hunger, danger, fear, family pressure, memory, humiliation, survival tension, or the cost of a decision.
+- Rhythm: pressure -> action -> reaction -> result -> new pressure.
 
-Абзацы:
-- Каждый обычный абзац должен быть удобным для озвучки.
-- Ориентир: 120-220 characters including spaces.
-- Один абзац обычно содержит 2-4 коротких предложения.
-- Не делай огромные абзацы.
-- Не ставь каждое короткое предложение с новой строки.
-- Абзац = один визуальный beat.
+Paragraphs:
+- Each normal paragraph should be comfortable for voiceover.
+- Target paragraph length: 120-220 characters including spaces.
+- One paragraph usually contains 2-4 short sentences.
+- Do not write giant paragraphs.
+- Do not put every short sentence on a new line.
+- One paragraph = one visual beat.
 
-Раскрытие сцен:
-- Каждую важную scene card раскрывай последовательностью beat-ов.
-- Покажи ситуацию, угрозу, что герой замечает, что герой делает, что меняется, кто реагирует, какой результат и какое новое напряжение появляется.
-- Не выкидывай важный бэкграунд из плана.
-- Если в плане есть детство, отец, бедность, долги, унижение, опыт, обучение, страх или личная травма, используй это через действие и ситуацию.
+Scene expansion:
+- Do not turn scene cards into a checklist.
+- Each important scene card should become a sequence of beats.
+- Show the situation, threat, what the character notices, what the character does, what changes, who reacts, what result appears, and what new pressure begins.
+- Do not remove important background from the plan.
+- If the plan mentions childhood, father, mother, family, poverty, debt, humiliation, training, fear, old wounds, personal failure, or past lessons, use it through action and situation.
 
-Запрещено:
-- Не выводи технические слова и мусор: WRITER, STAGE, STORY, CORE, FINAL, HARD, THIS, PART.
-- Не выводи системные сообщения.
-- Не выводи китайские или служебные сообщения об остановке генерации.
-- Не меняй имена персонажей.`;
+Clean output rule:
+- Do not output broken placeholder words or prompt residue.
+- These words are allowed only when they naturally belong to the sentence: main, show, one, style, card, face, hook, exit.
+- Never use them as broken placeholders, character-name replacements, uppercase residue, or random standalone fragments.
 
-  return `Ты сценарист YouTube manga/manhwa recap.
+Bad examples:
+Main turned around.
+Show looked at me.
+ONE string.
+STYLE breathing too fast.
+Card, clean water.
+Leave. Now. Face.
+Hook the deer shifted routes.
+Exit spirits.
 
-Пиши только выбранную часть сценария.
+Good examples:
+Mio turned around.
+She looked at me.
+One string hung loose from the bow.
+I was breathing too fast.
+The water was clean.
+I had to leave now.
+The deer shifted routes before a storm.
+The old path led toward the exit.
 
-Часть:
+Before sending the final script, silently scan the whole output.
+If Main appears as a character name, replace it with the correct locked name.
+If Show appears instead of she/her, rewrite the sentence.
+If ONE, STYLE, Card, Face, Hook, or Exit appears as residue, rewrite that sentence naturally.
+
+Do not output system messages.
+Do not output provider error messages.
+Do not output Chinese termination messages.
+Do not change character names.
+Output only clean script text.`;
+
+  return `You are a YouTube manga/manhwa recap scriptwriter.
+
+Write only the selected script part.
+
+Part:
 Part ${partNumber} — ${partTitle}
 
-Объём:
+Target length:
 ${manualTargetChars}
 
 === CURRENT PART PLAN ===
@@ -826,7 +859,7 @@ ${manualSceneCards || "[CURRENT PART SCENE CARDS ARE EMPTY]"}
 === PREVIOUS WRITTEN PARTS CONTEXT ===
 ${previousWrittenPartsContext}
 
-Используй предыдущие части только как память о том, что уже произошло. Не переписывай их в ответе.
+Use previous parts only as continuity memory. Do not rewrite them in the answer.
 
 === STYLE RULES ===
 ${manualStyleRules || cleanDefaultStyleRules}
@@ -834,11 +867,11 @@ ${manualStyleRules || cleanDefaultStyleRules}
 === EXTRA INSTRUCTION ===
 ${manualExtraInstruction || "No extra instruction."}
 
-Команда:
-Напиши полную Part ${partNumber}.
-Используй Current Part Plan и Current Part Scene Cards как основу.
-Соблюдай стиль и объём.
-Выдай только готовый текст сценария на English.`;
+Command:
+Write the full Part ${partNumber}.
+Use Current Part Plan and Current Part Scene Cards as the foundation.
+Follow the style rules and target length.
+Output only the finished clean script text in English.`;
 }
 
 
