@@ -164,9 +164,9 @@ function isSuspiciousPartTitle(title: string): boolean {
 export function extractPartHeadings(text: string): PartHeading[] {
   if (!text) return [];
 
-  const optionalSectionPrefix = `(?:(?:${SECTION_PREFIX_PATTERN})\.\s*)?`;
+  const optionalSectionPrefix = String.raw`(?:(?:${SECTION_PREFIX_PATTERN})\.\s*)?`;
   const headingRegex = new RegExp(
-    `(?:^|\n)(\s*${optionalSectionPrefix}(?:#{1,6}\s*)?(?:PART|Part|part|ЧАСТЬ|Часть|часть)\s+(${PART_TOKEN_PATTERN})\s*(?:[—–-]|:|\.)\s*([^\n]+))`,
+    String.raw`(?:^|\n)(\s*${optionalSectionPrefix}(?:#{1,6}\s*)?(?:PART|Part|part|ЧАСТЬ|Часть|часть)\s+(${PART_TOKEN_PATTERN})\s*(?:[—–-]|:|\.)\s*([^\n]+))`,
     "gi",
   );
 
