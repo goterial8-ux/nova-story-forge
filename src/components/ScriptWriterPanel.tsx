@@ -13,9 +13,10 @@ import {
 
 const DEFAULT_STYLE_RULES = `You are a YouTube manga/manhwa recap scriptwriter.
 
-I will give you the Story Plan and Scene Cards. Use them as the only source for the script.
+Use ONLY the provided Current Part Plan as the source for this script part.
+Do not use Scene Cards. Do not ask for Scene Cards. Do not mention Scene Cards in the output.
 
-When I ask you to write Part 1, Part 2, and so on, write the full script for that exact part using the matching plan and scene cards.
+When I ask you to write Part 1, Part 2, and so on, write the full script for that exact part using the matching part plan.
 
 Do not create a new structure.
 Do not rewrite the plan.
@@ -35,7 +36,7 @@ Length:
 - Normal part length: 12,000-15,000 characters including spaces, unless I give another range.
 - Do not finish too early.
 - If you only mention each planned event once, that is not enough.
-- Each important scene must be expanded through action, reaction, consequence, pressure, and payoff.
+- Each important planned event must be expanded through action, reaction, consequence, pressure, and payoff.
 
 Style:
 - Write simply, clearly, dramatically, and visually.
@@ -54,9 +55,9 @@ Paragraphs:
 - Do not put every short sentence on a new line.
 - One paragraph = one visual beat.
 
-Scene expansion:
-- Do not turn scene cards into a checklist.
-- Each important scene card should become a sequence of beats.
+Plan expansion:
+- Do not turn the plan into a checklist.
+- Each important planned event should become a sequence of beats.
 - Show the situation, threat, what the character notices, what the character does, what changes, who reacts, what result appears, and what new pressure begins.
 - Do not remove important background from the plan.
 - If the plan mentions childhood, father, mother, family, poverty, debt, humiliation, training, fear, old wounds, personal failure, or past lessons, use it through action and situation.
@@ -122,9 +123,7 @@ function buildPreviousWrittenPartsPreview(parts: ScriptPart[], selectedIndex: nu
     .filter((p) => p.partNumber < selectedPart.partNumber && p.draftText?.trim())
     .sort((a, b) => a.partNumber - b.partNumber);
 
-  if (previousParts.length === 0) {
-    return "None. This is the first written part.";
-  }
+  if (previousParts.length === 0) return "None. This is the first written part.";
 
   return previousParts
     .map((p) => {
@@ -134,7 +133,6 @@ function buildPreviousWrittenPartsPreview(parts: ScriptPart[], selectedIndex: nu
         .filter(Boolean);
       const opening = paragraphs.slice(0, 2).join(" ").slice(0, 450) || "Not available.";
       const ending = paragraphs.slice(-3).join(" ").slice(0, 900) || "Not available.";
-
       return [
         `Part ${p.partNumber}: ${p.partTitle}`,
         `Status: ${p.status}`,
@@ -155,10 +153,6 @@ function buildManualPromptPreview(parts: ScriptPart[], selectedIndex: number): s
     part.manualPartPlan?.trim() ||
     part.sourcePartPlan?.trim() ||
     "[CURRENT PART PLAN IS EMPTY]";
-  const sceneCards =
-    part.manualSceneCards?.trim() ||
-    part.sourceSceneCards?.trim() ||
-    "[CURRENT PART SCENE CARDS ARE EMPTY]";
   const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
   const extra = part.manualExtraInstruction?.trim() || "No extra instruction.";
 
@@ -175,9 +169,6 @@ ${target}
 === CURRENT PART PLAN ===
 ${partPlan}
 
-=== CURRENT PART SCENE CARDS ===
-${sceneCards}
-
 === PREVIOUS WRITTEN PARTS CONTEXT ===
 ${previousPartsContext}
 
@@ -191,7 +182,9 @@ ${extra}
 
 Command:
 Write the full Part ${part.partNumber}.
-Use Current Part Plan and Current Part Scene Cards as the foundation.
+Use ONLY Current Part Plan as the foundation.
+Do not use Scene Cards.
+Do not mention Scene Cards.
 Follow the style rules and target length.
 Output only the finished clean script text in English.`;
 }
@@ -224,9 +217,7 @@ export function ScriptWriterPanel({
   const [copiedOutput, setCopiedOutput] = React.useState(false);
 
   React.useEffect(() => {
-    if (selectedIndex >= parts.length) {
-      setSelectedIndex(Math.max(0, parts.length - 1));
-    }
+    if (selectedIndex >= parts.length) setSelectedIndex(Math.max(0, parts.length - 1));
   }, [parts.length, selectedIndex]);
 
   if (parts.length === 0) {
@@ -252,9 +243,9 @@ export function ScriptWriterPanel({
   const allApproved = parts.length > 0 && parts.every((p) => p.status === "approved");
   const promptPreview = buildManualPromptPreview(parts, selectedIndex);
   const manualPartPlanValue = part.manualPartPlan ?? part.sourcePartPlan ?? "";
-  const manualSceneCardsValue = part.manualSceneCards ?? part.sourceSceneCards ?? "";
   const manualStyleValue = part.manualStyleRules ?? DEFAULT_STYLE_RULES;
   const manualTargetValue = part.manualTargetChars ?? "12,000-15,000 characters including spaces";
+  const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
 
   const copyPrompt = async () => {
     await navigator.clipboard.writeText(promptPreview);
@@ -273,36 +264,22 @@ export function ScriptWriterPanel({
     .map((p) => `## Part ${p.partNumber}: ${p.partTitle}\n\n${p.draftText.trim()}`)
     .join("\n\n\n");
 
-  const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
-
   return (
     <div className="flex-1 overflow-hidden flex flex-col gap-4 mt-4">
       <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
-              Manual Full Part Writer
-            </div>
+            <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">Plan-Only Full Part Writer</div>
             <div className="text-sm text-slate-600 mt-1">
-              One request writes one complete part. No autopilot, no supervisor loop, no automatic repair.
+              One request writes one complete part using only the current part plan. Scene Cards are disabled for writing.
             </div>
           </div>
-
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={onInitScriptParts}
-              className="px-3 py-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Sync Parts
+            <button onClick={onInitScriptParts} className="px-3 py-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm">
+              <RefreshCw className="w-3.5 h-3.5" /> Sync Parts
             </button>
-            <button
-              onClick={onClearAllParts}
-              disabled={isBatchGenerating}
-              className="px-3 py-2 bg-white text-red-600 border border-red-200 hover:bg-red-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm disabled:opacity-50"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              Clear All Outputs
+            <button onClick={onClearAllParts} disabled={isBatchGenerating} className="px-3 py-2 bg-white text-red-600 border border-red-200 hover:bg-red-50 text-xs font-bold uppercase tracking-wide flex items-center gap-2 rounded-sm disabled:opacity-50">
+              <Eraser className="w-3.5 h-3.5" /> Clear All Outputs
             </button>
           </div>
         </div>
@@ -310,31 +287,13 @@ export function ScriptWriterPanel({
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
           <div className="border border-slate-200 rounded-sm overflow-hidden bg-slate-50 max-h-64 overflow-y-auto">
             {parts.map((p, idx) => (
-              <button
-                key={p.partNumber}
-                onClick={() => setSelectedIndex(idx)}
-                className={`w-full text-left p-3 border-b border-slate-200 last:border-b-0 transition ${
-                  idx === selectedIndex ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50 text-slate-700"
-                }`}
-              >
+              <button key={p.partNumber} onClick={() => setSelectedIndex(idx)} className={`w-full text-left p-3 border-b border-slate-200 last:border-b-0 transition ${idx === selectedIndex ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50 text-slate-700"}`}>
                 <div className="flex justify-between gap-2 items-start">
                   <div>
-                    <div className="text-[10px] uppercase font-black tracking-widest opacity-70">
-                      Part {p.partNumber}
-                    </div>
+                    <div className="text-[10px] uppercase font-black tracking-widest opacity-70">Part {p.partNumber}</div>
                     <div className="text-xs font-bold line-clamp-2 mt-1">{p.partTitle}</div>
                   </div>
-                  <span
-                    className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-sm ${
-                      p.draftText?.trim()
-                        ? idx === selectedIndex
-                          ? "bg-white/20 text-white"
-                          : "bg-emerald-50 text-emerald-700"
-                        : idx === selectedIndex
-                        ? "bg-white/10 text-white/80"
-                        : "bg-slate-100 text-slate-400"
-                    }`}
-                  >
+                  <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-sm ${p.draftText?.trim() ? idx === selectedIndex ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-700" : idx === selectedIndex ? "bg-white/10 text-white/80" : "bg-slate-100 text-slate-400"}`}>
                     {p.draftText?.trim() ? p.status : "empty"}
                   </span>
                 </div>
@@ -343,22 +302,10 @@ export function ScriptWriterPanel({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
-              <div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Parts</div>
-              <div className="font-black text-lg text-slate-900">{parts.length}</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
-              <div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Written</div>
-              <div className="font-black text-lg text-slate-900">{writtenParts}</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
-              <div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Approved</div>
-              <div className="font-black text-lg text-slate-900">{approvedParts}</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
-              <div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Stage</div>
-              <div className="font-black text-lg text-slate-900 uppercase">{stageStatus}</div>
-            </div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm"><div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Parts</div><div className="font-black text-lg text-slate-900">{parts.length}</div></div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm"><div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Written</div><div className="font-black text-lg text-slate-900">{writtenParts}</div></div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm"><div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Approved</div><div className="font-black text-lg text-slate-900">{approvedParts}</div></div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm"><div className="uppercase text-[9px] tracking-widest text-slate-400 font-black">Stage</div><div className="font-black text-lg text-slate-900 uppercase">{stageStatus}</div></div>
           </div>
         </div>
       </div>
@@ -366,71 +313,28 @@ export function ScriptWriterPanel({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 overflow-y-auto pr-1 pb-6">
         <div className="flex flex-col gap-4">
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
-            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-              Current Part Plan
-            </label>
-            <textarea
-              value={manualPartPlanValue}
-              onChange={(e) => updatePart(selectedIndex, { manualPartPlan: e.target.value })}
-              className="w-full h-44 p-3 border border-slate-200 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900"
-              placeholder="Auto-filled from Story Plan, or paste the current part plan manually."
-            />
+            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Current Part Plan</label>
+            <textarea value={manualPartPlanValue} onChange={(e) => updatePart(selectedIndex, { manualPartPlan: e.target.value })} className="w-full h-64 p-3 border border-slate-200 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900" placeholder="Auto-filled from Story Plan, or paste the current part plan manually." />
           </div>
 
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
-            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-              Current Part Scene Cards
-            </label>
-            <textarea
-              value={manualSceneCardsValue}
-              onChange={(e) => updatePart(selectedIndex, { manualSceneCards: e.target.value })}
-              className="w-full h-56 p-3 border border-slate-200 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900"
-              placeholder="Auto-filled from Scene Cards, or paste the current part scene cards manually."
-            />
+            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Previous Written Parts Context</label>
+            <textarea value={previousPartsContext} readOnly className="w-full h-36 p-3 border border-slate-200 bg-slate-50 text-xs font-mono leading-relaxed resize-y text-slate-600" />
           </div>
 
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
-            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-              Previous Written Parts Context
-            </label>
-            <textarea
-              value={previousPartsContext}
-              readOnly
-              className="w-full h-36 p-3 border border-slate-200 bg-slate-50 text-xs font-mono leading-relaxed resize-y text-slate-600"
-            />
-          </div>
-
-          <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
-            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-              Style Rules
-            </label>
-            <textarea
-              value={manualStyleValue}
-              onChange={(e) => updatePart(selectedIndex, { manualStyleRules: e.target.value })}
-              className="w-full h-72 p-3 border border-slate-200 text-xs font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900"
-            />
+            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Style Rules</label>
+            <textarea value={manualStyleValue} onChange={(e) => updatePart(selectedIndex, { manualStyleRules: e.target.value })} className="w-full h-72 p-3 border border-slate-200 text-xs font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900" />
           </div>
 
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-                Target Characters
-              </label>
-              <input
-                value={manualTargetValue}
-                onChange={(e) => updatePart(selectedIndex, { manualTargetChars: e.target.value })}
-                className="w-full p-3 border border-slate-200 text-sm font-mono focus:outline-none focus:border-slate-900"
-              />
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Target Characters</label>
+              <input value={manualTargetValue} onChange={(e) => updatePart(selectedIndex, { manualTargetChars: e.target.value })} className="w-full p-3 border border-slate-200 text-sm font-mono focus:outline-none focus:border-slate-900" />
             </div>
             <div>
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-                Part Status
-              </label>
-              <select
-                value={part.status}
-                onChange={(e) => updatePart(selectedIndex, { status: e.target.value as StageStatus })}
-                className="w-full p-3 border border-slate-200 text-sm font-bold uppercase focus:outline-none focus:border-slate-900 bg-white"
-              >
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Part Status</label>
+              <select value={part.status} onChange={(e) => updatePart(selectedIndex, { status: e.target.value as StageStatus })} className="w-full p-3 border border-slate-200 text-sm font-bold uppercase focus:outline-none focus:border-slate-900 bg-white">
                 <option value="not_started">not_started</option>
                 <option value="generated">generated</option>
                 <option value="needs_repair">needs_repair</option>
@@ -439,15 +343,8 @@ export function ScriptWriterPanel({
               </select>
             </div>
             <div className="md:col-span-2">
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">
-                Extra Instruction
-              </label>
-              <textarea
-                value={part.manualExtraInstruction ?? ""}
-                onChange={(e) => updatePart(selectedIndex, { manualExtraInstruction: e.target.value })}
-                className="w-full h-28 p-3 border border-slate-200 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900"
-                placeholder="Optional: exact locked names, extra style notes, or current correction for this part."
-              />
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 block mb-2">Extra Instruction</label>
+              <textarea value={part.manualExtraInstruction ?? ""} onChange={(e) => updatePart(selectedIndex, { manualExtraInstruction: e.target.value })} className="w-full h-28 p-3 border border-slate-200 text-sm font-mono leading-relaxed resize-y focus:outline-none focus:border-slate-900" placeholder="Optional: exact locked names, extra style notes, or current correction for this part." />
             </div>
           </div>
         </div>
@@ -455,118 +352,38 @@ export function ScriptWriterPanel({
         <div className="flex flex-col gap-4">
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">
-                Prompt Preview
-              </label>
-              <button
-                onClick={copyPrompt}
-                className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm"
-              >
-                <Clipboard className="w-3 h-3" />
-                {copiedPrompt ? "Copied" : "Copy Prompt"}
-              </button>
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Prompt Preview</label>
+              <button onClick={copyPrompt} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm"><Clipboard className="w-3 h-3" />{copiedPrompt ? "Copied" : "Copy Prompt"}</button>
             </div>
-            <textarea
-              value={promptPreview}
-              readOnly
-              className="w-full h-72 p-3 border border-slate-200 bg-slate-50 text-[11px] font-mono leading-relaxed resize-y text-slate-600"
-            />
-            <button
-              onClick={() => onGeneratePart(selectedIndex)}
-              disabled={isBatchGenerating}
-              className="mt-3 w-full px-4 py-3 bg-slate-900 text-white hover:bg-slate-800 border-none text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"
-            >
-              <Wand2 className="w-4 h-4" />
-              Generate Full Part
-            </button>
+            <textarea value={promptPreview} readOnly className="w-full h-72 p-3 border border-slate-200 bg-slate-50 text-[11px] font-mono leading-relaxed resize-y text-slate-600" />
+            <button onClick={() => onGeneratePart(selectedIndex)} disabled={isBatchGenerating} className="mt-3 w-full px-4 py-3 bg-slate-900 text-white hover:bg-slate-800 border-none text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"><Wand2 className="w-4 h-4" /> Generate Full Part</button>
           </div>
 
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">
-                Generated / Editable Output
-              </label>
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Generated / Editable Output</label>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={copyOutput}
-                  disabled={!part.draftText}
-                  className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"
-                >
-                  <Clipboard className="w-3 h-3" />
-                  {copiedOutput ? "Copied" : "Copy"}
-                </button>
-                <button
-                  onClick={() => downloadText(`part-${part.partNumber}.txt`, part.draftText || "")}
-                  disabled={!part.draftText}
-                  className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"
-                >
-                  <Download className="w-3 h-3" />
-                  Part
-                </button>
-                <button
-                  onClick={() => onClearPart(selectedIndex)}
-                  className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1 rounded-sm"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Clear
-                </button>
+                <button onClick={copyOutput} disabled={!part.draftText} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"><Clipboard className="w-3 h-3" />{copiedOutput ? "Copied" : "Copy"}</button>
+                <button onClick={() => downloadText(`part-${part.partNumber}.txt`, part.draftText || "")} disabled={!part.draftText} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"><Download className="w-3 h-3" />Part</button>
+                <button onClick={() => onClearPart(selectedIndex)} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1 rounded-sm"><Trash2 className="w-3 h-3" />Clear</button>
               </div>
             </div>
-            <textarea
-              value={part.draftText || ""}
-              onChange={(e) => updatePart(selectedIndex, { draftText: e.target.value })}
-              className="w-full h-[520px] p-4 border border-slate-200 text-sm leading-relaxed resize-y focus:outline-none focus:border-slate-900"
-              placeholder="Generated full part will appear here. You can edit it manually before approving."
-            />
+            <textarea value={part.draftText || ""} onChange={(e) => updatePart(selectedIndex, { draftText: e.target.value })} className="w-full h-[520px] p-4 border border-slate-200 text-sm leading-relaxed resize-y focus:outline-none focus:border-slate-900" placeholder="Generated full part will appear here. You can edit it manually before approving." />
             <div className="flex items-center gap-2 mt-3">
-              <button
-                onClick={() => updatePart(selectedIndex, { status: "approved" })}
-                disabled={!part.draftText?.trim()}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 border-none text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"
-              >
-                <Check className="w-4 h-4" />
-                Approve Manually
-              </button>
-              <button
-                onClick={() => onGeneratePart(selectedIndex)}
-                disabled={isBatchGenerating}
-                className="px-4 py-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Regenerate
-              </button>
+              <button onClick={() => updatePart(selectedIndex, { status: "approved" })} disabled={!part.draftText?.trim()} className="flex-1 px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 border-none text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"><Check className="w-4 h-4" />Approve Manually</button>
+              <button onClick={() => onGeneratePart(selectedIndex)} disabled={isBatchGenerating} className="px-4 py-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 rounded-sm disabled:opacity-50"><RefreshCw className="w-4 h-4" />Regenerate</button>
             </div>
           </div>
 
           <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">
-                Full Written Script Preview
-              </label>
+              <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">Full Written Script Preview</label>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => downloadText("written-parts.txt", fullScript)}
-                  disabled={!fullScript.trim()}
-                  className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"
-                >
-                  <Download className="w-3 h-3" />
-                  Written
-                </button>
-                <button
-                  onClick={onAssembleScript}
-                  disabled={!allApproved}
-                  className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-900 bg-slate-900 text-white hover:bg-slate-800 flex items-center gap-1 rounded-sm disabled:opacity-40"
-                >
-                  Assemble Approved
-                </button>
+                <button onClick={() => downloadText("written-parts.txt", fullScript)} disabled={!fullScript.trim()} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-200 hover:bg-slate-50 flex items-center gap-1 rounded-sm disabled:opacity-40"><Download className="w-3 h-3" />Written</button>
+                <button onClick={onAssembleScript} disabled={!allApproved} className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide border border-slate-900 bg-slate-900 text-white hover:bg-slate-800 flex items-center gap-1 rounded-sm disabled:opacity-40">Assemble Approved</button>
               </div>
             </div>
-            <textarea
-              value={fullScript}
-              readOnly
-              className="w-full h-96 p-3 border border-slate-200 bg-slate-50 text-xs font-mono leading-relaxed resize-y text-slate-600"
-              placeholder="All written parts will appear here immediately, even before the full script is approved."
-            />
+            <textarea value={fullScript} readOnly className="w-full h-96 p-3 border border-slate-200 bg-slate-50 text-xs font-mono leading-relaxed resize-y text-slate-600" placeholder="All written parts will appear here immediately, even before the full script is approved." />
           </div>
         </div>
       </div>
