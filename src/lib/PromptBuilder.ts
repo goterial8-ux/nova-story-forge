@@ -3,47 +3,61 @@ import { clipForWriter, extractPartSlice } from "./partUtils";
 
 const DEFAULT_SCRIPT_STYLE_RULES = `You are a YouTube manga/manhwa recap scriptwriter.
 
-Use ONLY the provided Current Part Plan as the source for this script part.
-Do not use Scene Cards. Do not ask for Scene Cards. Do not mention Scene Cards in the output.
+HARD STYLE CONSTRAINTS — apply these before writing anything else:
+- Every sentence: maximum 10 words. No exceptions. If a sentence runs longer, split it into two.
+- Every paragraph: 120-220 characters including spaces.
+- One paragraph = one visual beat = 2-4 short sentences.
+- Never write a sentence longer than 10 words.
 
-When I ask you to write Part 1, Part 2, and so on, write the full script for that exact part using the matching part plan.
+Rhythm (follow this order inside every paragraph):
+1. Situation — one short sentence.
+2. Action or threat — one short sentence.
+3. Reaction — one short sentence.
+4. Result or new pressure — one short sentence.
 
-Do not create a new structure.
-Do not rewrite the plan.
-Do not compress the part into a short summary.
-Do not explain what you are doing.
-Output only the finished script text.
+Voice:
+- First person when the scene follows the main character directly.
+- Third person when showing enemy reactions, crowd, politics, or events outside the main character.
 
-Script format:
-- Script language: English.
-- Main voice: first person from the main character when the scene follows his direct experience, actions, thoughts, fear, decisions, or observations.
-- Third person is allowed when showing other characters, enemy reactions, crowd reactions, family reactions, political consequences, large events, or things happening outside the main character's direct view.
-- Style: YouTube manga/manhwa recap voiceover.
-- The script must sound dramatic, visual, clear, emotional, and easy to hear in a video.
+Language: English. Script language is English only.
 
 Length:
 - One command = one complete part.
-- Normal part length: 12,000-15,000 characters including spaces, unless I give another range.
-- Do not finish too early.
-- If you only mention each planned event once, that is not enough.
+- Normal part length: 12,000-15,000 characters including spaces, unless another range is given.
+- Do not finish early.
 - Each important planned event must be expanded through action, reaction, consequence, pressure, and payoff.
+- Mentioning an event once is not enough. Show it fully.
 
-Style:
-- Write simply, clearly, dramatically, and visually.
-- Do not write a dry summary.
-- Do not write like a report.
-- Do not write like analysis.
-- Do not write decorative novel prose that describes things only for beauty.
-- Do not remove dramatic atmosphere when it increases hunger, danger, fear, family pressure, memory, humiliation, survival tension, or the cost of a decision.
-- Rhythm: pressure -> action -> reaction -> result -> new pressure.
+What to write:
+- Dramatic, visual, clear, emotional.
+- Show hunger, danger, fear, humiliation, survival tension through action, not description.
+- Use father, mother, family, poverty, debt, old wounds from the plan through action and situation.
 
-Paragraphs:
-- Each normal paragraph should be comfortable for voiceover.
-- Target paragraph length: 120-220 characters including spaces.
-- One paragraph usually contains 2-4 short sentences.
-- Do not write giant paragraphs.
-- Do not put every short sentence on a new line.
-- One paragraph = one visual beat.
+What NOT to write:
+- No sentence over 10 words.
+- No literary prose for beauty only.
+- No dry summaries or reports.
+- No giant paragraphs.
+- No broken placeholder words.
+
+SENTENCE LENGTH EXAMPLES:
+
+Wrong (too long):
+"The collectors took our barley before the pot even cooled and left us one cracked bowl."
+"Mio poured water over the last grain anyway and made the soup thin enough to reflect the roof beams."
+
+Correct (10 words or fewer per sentence):
+"The collectors came at dawn. They took the barley. They left one cracked bowl."
+"Mio poured water over the last grain. The soup was thin. She set it between us anyway."
+
+Wrong (too long):
+"I did not go to the normal hunting woods because every hunter had stripped them clean over two bad seasons."
+
+Correct:
+"I did not go to the normal hunting woods. Every hunter had stripped them clean. Two bad seasons had done that."
+
+Paragraph rhythm example (correct):
+"The door opened. Three soldiers stepped in. I did not move. My hands stayed flat on the table."
 
 Plan expansion:
 - Do not turn the plan into a checklist.
@@ -224,31 +238,38 @@ function previousWrittenPartsContext(partNumber: number, state: ProjectState): s
 }
 
 function getLastApprovedPartVoiceAnchor(state: ProjectState, partNumber: number): string {
-  const previousApprovedParts = state.scriptParts
+  // Use any written part — prefer approved, fall back to latest generated
+  const previousParts = state.scriptParts
     .filter(
       (p) =>
         p.partNumber < partNumber &&
-        p.status === "approved" &&
         p.draftText &&
         p.draftText.trim().length > 0,
     )
     .sort((a, b) => a.partNumber - b.partNumber);
 
-  if (previousApprovedParts.length === 0) return "";
+  if (previousParts.length === 0) return "";
 
-  const lastApproved = previousApprovedParts[previousApprovedParts.length - 1];
+  const approvedParts = previousParts.filter((p) => p.status === "approved");
+  const lastApproved = approvedParts.length > 0
+    ? approvedParts[approvedParts.length - 1]
+    : previousParts[previousParts.length - 1];
+
   const paragraphs = lastApproved.draftText
     .split(/\n+/)
     .map((x) => x.trim())
     .filter(Boolean);
 
   const lastContent = paragraphs.slice(-5).join(" ").slice(-500);
+  const lastSentence = paragraphs[paragraphs.length - 1]?.slice(-150) || "";
 
   return [
-    `VOICE ANCHOR — last 500 characters of the previous approved part (Part ${lastApproved.partNumber} "${lastApproved.partTitle}"):`,
+    `VOICE ANCHOR — match sentence rhythm and length from Part ${lastApproved.partNumber} "${lastApproved.partTitle}":`,
     `"${lastContent}"`,
     "",
-    "IMPORTANT: Match this voice, tone, paragraph rhythm, and sentence length exactly. This is your writing standard.",
+    `LAST SENTENCE OF PREVIOUS PART: "${lastSentence}"`,
+    "",
+    "IMPORTANT: Every sentence must be 10 words or fewer. Match paragraph rhythm exactly. This is your writing standard.",
   ].join("\n");
 }
 
@@ -295,40 +316,38 @@ export function buildPartPrompt(partNumber: number, state: ProjectState): string
   const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
   const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
 
-  return `You are a YouTube manga/manhwa recap scriptwriter.
+  return `=== STYLE RULES — READ BEFORE WRITING ANYTHING ===
+${manualStyleRules || DEFAULT_SCRIPT_STYLE_RULES}
 
-Write only the selected script part.
-
-Part:
+=== PART TO WRITE ===
 Part ${partNumber} — ${partTitle}
 
-Target length:
-${manualTargetChars}
+Target length: ${manualTargetChars}
 
+${voiceAnchor ? `=== VOICE ANCHOR ===\n${voiceAnchor}\n` : ""}
 === CURRENT PART PLAN ===
 ${currentPartPlan}
 
+${sceneAnchors ? `${sceneAnchors}\n` : ""}
 === PREVIOUS WRITTEN PARTS CONTEXT ===
 ${previousContext}
 
 Use previous parts only as continuity memory. Do not rewrite them in the answer.
 
-${voiceAnchor}
-
-${sceneAnchors}
-
-=== STYLE RULES ===
-${manualStyleRules || DEFAULT_SCRIPT_STYLE_RULES}
-
 === EXTRA INSTRUCTION ===
 ${manualExtraInstruction || "No extra instruction."}
 
-Command:
+=== COMMAND ===
 Write the full Part ${partNumber}.
 Use ONLY Current Part Plan as the foundation.
-Do not use Scene Cards.
-Do not mention Scene Cards.
+Do not use Scene Cards. Do not mention Scene Cards.
 Follow the style rules and target length.
+
+FINAL CHECK before outputting:
+- Scan your first 10 sentences. Does any sentence exceed 10 words? Split it.
+- Scan your paragraphs. Is any paragraph over 220 characters? Break it.
+- Fix any placeholder residue (Main, Show, ONE, STYLE, Card, Face, Hook, Exit).
+
 Output only the finished clean script text in English.`;
 }
 

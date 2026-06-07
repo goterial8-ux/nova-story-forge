@@ -13,89 +13,73 @@ import {
 
 const DEFAULT_STYLE_RULES = `You are a YouTube manga/manhwa recap scriptwriter.
 
-Use ONLY the provided Current Part Plan as the source for this script part.
-Do not use Scene Cards. Do not ask for Scene Cards. Do not mention Scene Cards in the output.
+HARD STYLE CONSTRAINTS — apply these before writing anything else:
+- Every sentence: maximum 10 words. No exceptions. If a sentence runs longer, split it into two.
+- Every paragraph: 120-220 characters including spaces.
+- One paragraph = one visual beat = 2-4 short sentences.
+- Never write a sentence longer than 10 words.
 
-When I ask you to write Part 1, Part 2, and so on, write the full script for that exact part using the matching part plan.
+Rhythm (follow this order inside every paragraph):
+1. Situation — one short sentence.
+2. Action or threat — one short sentence.
+3. Reaction — one short sentence.
+4. Result or new pressure — one short sentence.
 
-Do not create a new structure.
-Do not rewrite the plan.
-Do not compress the part into a short summary.
-Do not explain what you are doing.
-Output only the finished script text.
+Voice:
+- First person when the scene follows the main character directly.
+- Third person when showing enemy reactions, crowd, politics, or events outside the main character.
 
-Script format:
-- Script language: English.
-- Main voice: first person from the main character when the scene follows his direct experience, actions, thoughts, fear, decisions, or observations.
-- Third person is allowed when showing other characters, enemy reactions, crowd reactions, family reactions, political consequences, large events, or things happening outside the main character's direct view.
-- Style: YouTube manga/manhwa recap voiceover.
-- The script must sound dramatic, visual, clear, emotional, and easy to hear in a video.
+Language: English. Script language is English only.
 
 Length:
 - One command = one complete part.
-- Normal part length: 12,000-15,000 characters including spaces, unless I give another range.
-- Do not finish too early.
-- If you only mention each planned event once, that is not enough.
+- Normal part length: 12,000-15,000 characters including spaces, unless another range is given.
+- Do not finish early.
 - Each important planned event must be expanded through action, reaction, consequence, pressure, and payoff.
+- Mentioning an event once is not enough. Show it fully.
 
-Style:
-- Write simply, clearly, dramatically, and visually.
-- Do not write a dry summary.
-- Do not write like a report.
-- Do not write like analysis.
-- Do not write decorative novel prose that describes things only for beauty.
-- Do not remove dramatic atmosphere when it increases hunger, danger, fear, family pressure, memory, humiliation, survival tension, or the cost of a decision.
-- Rhythm: pressure -> action -> reaction -> result -> new pressure.
+What to write:
+- Dramatic, visual, clear, emotional.
+- Show hunger, danger, fear, humiliation, survival tension through action, not description.
+- Use father, mother, family, poverty, debt, old wounds from the plan through action and situation.
 
-Paragraphs:
-- Each normal paragraph should be comfortable for voiceover.
-- Target paragraph length: 120-220 characters including spaces.
-- One paragraph usually contains 2-4 short sentences.
-- Do not write giant paragraphs.
-- Do not put every short sentence on a new line.
-- One paragraph = one visual beat.
+What NOT to write:
+- No sentence over 10 words.
+- No literary prose for beauty only.
+- No dry summaries or reports.
+- No giant paragraphs.
+- No broken placeholder words.
+
+SENTENCE LENGTH EXAMPLES:
+
+Wrong (too long):
+"The collectors took our barley before the pot even cooled and left us one cracked bowl."
+"Mio poured water over the last grain anyway and made the soup thin enough to reflect the roof beams."
+
+Correct (10 words or fewer per sentence):
+"The collectors came at dawn. They took the barley. They left one cracked bowl."
+"Mio poured water over the last grain. The soup was thin. She set it between us anyway."
+
+Wrong (too long):
+"I did not go to the normal hunting woods because every hunter had stripped them clean over two bad seasons."
+
+Correct:
+"I did not go to the normal hunting woods. Every hunter had stripped them clean. Two bad seasons had done that."
+
+Paragraph rhythm example (correct):
+"The door opened. Three soldiers stepped in. I did not move. My hands stayed flat on the table."
 
 Plan expansion:
 - Do not turn the plan into a checklist.
 - Each important planned event should become a sequence of beats.
 - Show the situation, threat, what the character notices, what the character does, what changes, who reacts, what result appears, and what new pressure begins.
-- Do not remove important background from the plan.
-- If the plan mentions childhood, father, mother, family, poverty, debt, humiliation, training, fear, old wounds, personal failure, or past lessons, use it through action and situation.
 
-Clean output rule:
-- Do not output broken placeholder words or prompt residue.
-- These words are allowed only when they naturally belong to the sentence: main, show, one, style, card, face, hook, exit.
-- Never use them as broken placeholders, character-name replacements, uppercase residue, or random standalone fragments.
+Placeholder cleanup (before final output, silently fix these):
+- Main → correct character name
+- Show → she/her
+- ONE, STYLE, Card, Face, Hook, Exit as residue → rewrite naturally
 
-Bad examples:
-Main turned around.
-Show looked at me.
-ONE string.
-STYLE breathing too fast.
-Card, clean water.
-Leave. Now. Face.
-Hook the deer shifted routes.
-Exit spirits.
-
-Good examples:
-Mio turned around.
-She looked at me.
-One string hung loose from the bow.
-I was breathing too fast.
-The water was clean.
-I had to leave now.
-The deer shifted routes before a storm.
-The old path led toward the exit.
-
-Before sending the final script, silently scan the whole output.
-If Main appears as a character name, replace it with the correct locked name.
-If Show appears instead of she/her, rewrite the sentence.
-If ONE, STYLE, Card, Face, Hook, or Exit appears as residue, rewrite that sentence naturally.
-
-Do not output system messages.
-Do not output provider error messages.
-Do not output Chinese termination messages.
-Do not change character names.
+Do not output system messages, provider errors, or Chinese termination messages.
 Output only clean script text.`;
 
 interface ScriptWriterPanelProps {
@@ -156,15 +140,13 @@ function buildManualPromptPreview(parts: ScriptPart[], selectedIndex: number): s
   const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
   const extra = part.manualExtraInstruction?.trim() || "No extra instruction.";
 
-  return `You are a YouTube manga/manhwa recap scriptwriter.
+  return `=== STYLE RULES — READ BEFORE WRITING ANYTHING ===
+${styleRules}
 
-Write only the selected script part.
-
-Part:
+=== PART TO WRITE ===
 Part ${part.partNumber} — ${part.partTitle}
 
-Target length:
-${target}
+Target length: ${target}
 
 === CURRENT PART PLAN ===
 ${partPlan}
@@ -174,18 +156,20 @@ ${previousPartsContext}
 
 Use previous parts only as continuity memory. Do not rewrite them in the answer.
 
-=== STYLE RULES ===
-${styleRules}
-
 === EXTRA INSTRUCTION ===
 ${extra}
 
-Command:
+=== COMMAND ===
 Write the full Part ${part.partNumber}.
 Use ONLY Current Part Plan as the foundation.
-Do not use Scene Cards.
-Do not mention Scene Cards.
+Do not use Scene Cards. Do not mention Scene Cards.
 Follow the style rules and target length.
+
+FINAL CHECK before outputting:
+- Scan your first 10 sentences. Does any sentence exceed 10 words? Split it.
+- Scan your paragraphs. Is any paragraph over 220 characters? Break it.
+- Fix any placeholder residue (Main, Show, ONE, STYLE, Card, Face, Hook, Exit).
+
 Output only the finished clean script text in English.`;
 }
 
