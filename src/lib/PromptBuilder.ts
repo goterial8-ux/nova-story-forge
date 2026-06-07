@@ -535,3 +535,4 @@ Do not repeat or rephrase the last paragraph.
 Start with what logically follows the last sentence.
 Match the voice anchor and style rules exactly.
 Output only the continuation in English.`;
+}
