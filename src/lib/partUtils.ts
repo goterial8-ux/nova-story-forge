@@ -1,3 +1,9 @@
+export type PartHeading = {
+  number: number;
+  title: string;
+  index: number;
+};
+
 const PART_WORDS: Record<string, number> = {
   one: 1,
   two: 2,
@@ -19,37 +25,34 @@ const PART_WORDS: Record<string, number> = {
   eighth: 8,
   ninth: 9,
   tenth: 10,
-  i: 1,
   ii: 2,
   iii: 3,
   iv: 4,
-  v: 5,
   vi: 6,
   vii: 7,
   viii: 8,
   ix: 9,
-  x: 10,
-  "\u043e\u0434\u0438\u043d": 1,
-  "\u0434\u0432\u0430": 2,
-  "\u0442\u0440\u0438": 3,
-  "\u0447\u0435\u0442\u044b\u0440\u0435": 4,
-  "\u043f\u044f\u0442\u044c": 5,
-  "\u0448\u0435\u0441\u0442\u044c": 6,
-  "\u0441\u0435\u043c\u044c": 7,
-  "\u0432\u043e\u0441\u0435\u043c\u044c": 8,
-  "\u0434\u0435\u0432\u044f\u0442\u044c": 9,
-  "\u0434\u0435\u0441\u044f\u0442\u044c": 10,
-  "\u043f\u0435\u0440\u0432\u0430\u044f": 1,
-  "\u0432\u0442\u043e\u0440\u0430\u044f": 2,
-  "\u0442\u0440\u0435\u0442\u044c\u044f": 3,
-  "\u0447\u0435\u0442\u0432\u0435\u0440\u0442\u0430\u044f": 4,
-  "\u0447\u0435\u0442\u0432\u0451\u0440\u0442\u0430\u044f": 4,
-  "\u043f\u044f\u0442\u0430\u044f": 5,
-  "\u0448\u0435\u0441\u0442\u0430\u044f": 6,
-  "\u0441\u0435\u0434\u044c\u043c\u0430\u044f": 7,
-  "\u0432\u043e\u0441\u044c\u043c\u0430\u044f": 8,
-  "\u0434\u0435\u0432\u044f\u0442\u0430\u044f": 9,
-  "\u0434\u0435\u0441\u044f\u0442\u0430\u044f": 10,
+  один: 1,
+  два: 2,
+  три: 3,
+  четыре: 4,
+  пять: 5,
+  шесть: 6,
+  семь: 7,
+  восемь: 8,
+  девять: 9,
+  десять: 10,
+  первая: 1,
+  вторая: 2,
+  третья: 3,
+  четвертая: 4,
+  четвёртая: 4,
+  пятая: 5,
+  шестая: 6,
+  седьмая: 7,
+  восьмая: 8,
+  девятая: 9,
+  десятая: 10,
 };
 
 const PART_TOKEN_PATTERN = [
@@ -80,30 +83,51 @@ const PART_TOKEN_PATTERN = [
   "vi",
   "ix",
   "ii",
-  "i",
-  "v",
-  "x",
-  "\u043e\u0434\u0438\u043d",
-  "\u0434\u0432\u0430",
-  "\u0442\u0440\u0438",
-  "\u0447\u0435\u0442\u044b\u0440\u0435",
-  "\u043f\u044f\u0442\u044c",
-  "\u0448\u0435\u0441\u0442\u044c",
-  "\u0441\u0435\u043c\u044c",
-  "\u0432\u043e\u0441\u0435\u043c\u044c",
-  "\u0434\u0435\u0432\u044f\u0442\u044c",
-  "\u0434\u0435\u0441\u044f\u0442\u044c",
-  "\u043f\u0435\u0440\u0432\u0430\u044f",
-  "\u0432\u0442\u043e\u0440\u0430\u044f",
-  "\u0442\u0440\u0435\u0442\u044c\u044f",
-  "\u0447\u0435\u0442\u0432\u0435\u0440\u0442\u0430\u044f",
-  "\u0447\u0435\u0442\u0432\u0451\u0440\u0442\u0430\u044f",
-  "\u043f\u044f\u0442\u0430\u044f",
-  "\u0448\u0435\u0441\u0442\u0430\u044f",
-  "\u0441\u0435\u0434\u044c\u043c\u0430\u044f",
-  "\u0432\u043e\u0441\u044c\u043c\u0430\u044f",
-  "\u0434\u0435\u0432\u044f\u0442\u0430\u044f",
-  "\u0434\u0435\u0441\u044f\u0442\u0430\u044f",
+  "один",
+  "два",
+  "три",
+  "четыре",
+  "пять",
+  "шесть",
+  "семь",
+  "восемь",
+  "девять",
+  "десять",
+  "первая",
+  "вторая",
+  "третья",
+  "четвертая",
+  "четвёртая",
+  "пятая",
+  "шестая",
+  "седьмая",
+  "восьмая",
+  "девятая",
+  "десятая",
+  "\\d+",
+].join("|");
+
+const SECTION_PREFIX_PATTERN = [
+  "одиннадцать",
+  "двенадцать",
+  "тринадцать",
+  "четырнадцать",
+  "пятнадцать",
+  "шестнадцать",
+  "семнадцать",
+  "восемнадцать",
+  "девятнадцать",
+  "двадцать",
+  "четыре",
+  "восемь",
+  "девять",
+  "десять",
+  "один",
+  "два",
+  "три",
+  "пять",
+  "шесть",
+  "семь",
   "\\d+",
 ].join("|");
 
@@ -112,25 +136,64 @@ function parsePartToken(token: string): number {
   return PART_WORDS[normalized] || parseInt(normalized, 10) || 0;
 }
 
-export function extractPartSlice(text: string, partNumber: number): string {
-  if (!text || !partNumber) return "";
+function normalizePartTitle(title: string): string {
+  return title.replace(/\s+/g, " ").trim();
+}
 
+function isSuspiciousPartTitle(title: string): boolean {
+  return /sci-fi|facility|dungeon|test vocabulary|approved plan|discard|rebuild|forbidden|hard drift|do not|must not|current part|scene cards|script writer|paragraph|repair/i.test(
+    title,
+  );
+}
+
+/**
+ * Extract only real story part headings.
+ *
+ * Supported examples:
+ * - PART ONE — ОХОТНИК И ЖИВАЯ ПЕЩЕРА
+ * - Четыре. PART ONE — ОХОТНИК И ЖИВАЯ ПЕЩЕРА
+ * - 4. Part 1: Introduction
+ * - Часть 1 — ОХОТНИК И ЖИВАЯ ПЕЩЕРА
+ *
+ * Intentionally ignored:
+ * - If the part introduces...
+ * - Part Function:
+ * - Scene Card 1.1:
+ * - current part scene cards
+ */
+export function extractPartHeadings(text: string): PartHeading[] {
+  if (!text) return [];
+
+  const optionalSectionPrefix = `(?:(?:${SECTION_PREFIX_PATTERN})\.\s*)?`;
   const headingRegex = new RegExp(
-    `(?:^|\\n)([ \\t]*(?:#{1,6}\\s*)?(?:(?:${PART_TOKEN_PATTERN})\\.\\s*)?(?:part|\\u0447\\u0430\\u0441\\u0442\\u044c)\\s+(${PART_TOKEN_PATTERN})\\b[^\\n]*)`,
+    `(?:^|\n)(\s*${optionalSectionPrefix}(?:#{1,6}\s*)?(?:PART|Part|part|ЧАСТЬ|Часть|часть)\s+(${PART_TOKEN_PATTERN})\s*(?:[—–-]|:|\.)\s*([^\n]+))`,
     "gi",
   );
 
-  const headings: Array<{ index: number; number: number }> = [];
+  const headings: PartHeading[] = [];
+  const seenNumbers = new Set<number>();
   let match: RegExpExecArray | null;
 
   while ((match = headingRegex.exec(text)) !== null) {
-    const number = parsePartToken(match[2]);
-    if (!number) continue;
-
     const lineOffset = match[0].startsWith("\n") ? 1 : 0;
-    headings.push({ index: match.index + lineOffset, number });
+    const index = match.index + lineOffset;
+    const number = parsePartToken(match[2]);
+    const title = normalizePartTitle(match[3]);
+
+    if (!number || !title || isSuspiciousPartTitle(title)) continue;
+    if (seenNumbers.has(number)) continue;
+
+    seenNumbers.add(number);
+    headings.push({ number, title, index });
   }
 
+  return headings.sort((a, b) => a.number - b.number);
+}
+
+export function extractPartSlice(text: string, partNumber: number): string {
+  if (!text || !partNumber) return "";
+
+  const headings = extractPartHeadings(text);
   const currentIndex = headings.findIndex((h) => h.number === partNumber);
   if (currentIndex < 0) return "";
 

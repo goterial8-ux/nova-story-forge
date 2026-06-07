@@ -21,7 +21,7 @@ import {
   validateScriptText,
   validationIssueSummary,
 } from "./lib/scriptValidation";
-import { extractPartSlice } from "./lib/partUtils";
+import { extractPartHeadings, extractPartSlice } from "./lib/partUtils";
 
 function softenSceneCardsSupervisorReport(
   report: SupervisorReport,
@@ -1567,71 +1567,16 @@ export default function App() {
       planText = planText.substring(0, cutOffMatch.index);
     }
 
-    // Supporting spelled-out parts (e.g., "PART ONE", "ЧАСТЬ ОДИН", "Part 1")
-    const wordToNum: Record<string, number> = {
-      one: 1,
-      two: 2,
-      three: 3,
-      four: 4,
-      five: 5,
-      six: 6,
-      seven: 7,
-      eight: 8,
-      nine: 9,
-      ten: 10,
-      один: 1,
-      два: 2,
-      три: 3,
-      четыре: 4,
-      пять: 5,
-      шесть: 6,
-      семь: 7,
-      восемь: 8,
-      девять: 9,
-      десять: 10,
-      первая: 1,
-      вторая: 2,
-      третья: 3,
-      четвертая: 4,
-      пятая: 5,
-      шестая: 6,
-      седьмая: 7,
-      восьмая: 8,
-      девятая: 9,
-      десятая: 10,
-      i: 1,
-      ii: 2,
-      iii: 3,
-      iv: 4,
-      v: 5,
-      vi: 6,
-      vii: 7,
-      viii: 8,
-      ix: 9,
-      x: 10,
-    };
-
-    // Robust line matcher supporting optional list prefixes
-    // Captures group 1 (part number/word) and group 2 (title)
-    const partListRegex =
-      /(?:^|\n)[^\n]*(?:Part|Часть)\s*(one|two|three|four|five|six|seven|eight|nine|ten|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять|первая|вторая|третья|четвертая|пятая|шестая|седьмая|восьмая|девятая|десятая|i|ii|iii|iv|v|vi|vii|viii|ix|x|\d+)\s*[:.-—]\s*([^\n]+)/gi;
-    let match;
-    const matches: { number: number; title: string }[] = [];
-    const seenNumbers = new Set<number>();
-
-    while ((match = partListRegex.exec(planText)) !== null) {
-      const pstr = match[1].toLowerCase();
-      const num = wordToNum[pstr] || parseInt(pstr) || 0;
-      if (num > 0) {
-        if (!seenNumbers.has(num)) {
-          seenNumbers.add(num);
-          matches.push({ number: num, title: match[2].trim() });
-        }
-      }
-    }
-
-    // Sort matches by part number to ensure correct order
-    matches.sort((a, b) => a.number - b.number);
+    // Parse only real part headings from the approved story plan.
+    // Supported real headings:
+    // - PART ONE — TITLE
+    // - Четыре. PART ONE — TITLE
+    // - Part 1: TITLE
+    // - Часть 1 — TITLE
+    //
+    // Important: this intentionally ignores rule text such as
+    // "If the part introduces...", "Part Function:", and "Scene Card 1.1:".
+    const matches = extractPartHeadings(planText);
 
     if (matches.length > 0) {
       matches.forEach((m) => {
