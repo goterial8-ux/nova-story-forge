@@ -168,7 +168,6 @@ export const STAGES: { id: StageId; name: string }[] = [
   { id: 'style_analyzer', name: 'Style Analyzer' },
   { id: 'story_dna', name: 'Story DNA' },
   { id: 'story_plan', name: 'Story Plan' },
-  { id: 'scene_cards', name: 'Scene Cards' },
   { id: 'script_writer', name: 'Script Writer' },
   { id: 'clean_export', name: 'Clean Export' },
 ];

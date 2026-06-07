@@ -237,9 +237,9 @@ export default function App() {
   const stateRef = useRef<ProjectState>(state);
 
   const [currentStageId, setCurrentStageId] = useState<StageId>(() => {
-    return (
-      (localStorage.getItem("studio_writer_stage") as StageId) || "idea_market"
-    );
+    const savedStage =
+      (localStorage.getItem("studio_writer_stage") as StageId) || "idea_market";
+    return savedStage === "scene_cards" ? "script_writer" : savedStage;
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
@@ -1148,11 +1148,11 @@ export default function App() {
       };
     if (
       stageId === "script_writer" &&
-      state.stageStatuses["scene_cards"] !== "locked"
+      state.stageStatuses["story_plan"] !== "locked"
     )
       return {
         allowed: false,
-        warning: "Scene Cards must be locked before writing Script.",
+        warning: "Story Plan must be locked before writing Script.",
       };
     return { allowed: true };
   };
@@ -1591,7 +1591,15 @@ export default function App() {
     const matches = extractPartHeadings(planText);
 
     const buildPartRecord = (partNumber: number, partTitle: string): ScriptPart => {
-      const sourcePartPlan = extractPartSlice(planText, partNumber);
+      let sourcePartPlan = extractPartSlice(planText, partNumber);
+      if (!String(sourcePartPlan || "").trim() && String(planText || "").trim()) {
+        sourcePartPlan = [
+          `AUTO-FALLBACK: The system could not isolate Part ${partNumber} automatically.`,
+          `Use this Story Plan as reference, but write ONLY Part ${partNumber} — ${partTitle}.`,
+          "",
+          planText,
+        ].join("\n");
+      }
       const sourceSceneCards =
         extractPartSlice(currentState.sceneCards || "", partNumber) ||
         `Scenes for ${partTitle}`;
@@ -1652,6 +1660,31 @@ export default function App() {
     updateState({ scriptParts: parts });
     updateStageStatus("script_writer", "generated");
   };
+
+  // Auto-sync Script Writer parts from the approved Story Plan.
+  // Workflow: Story Plan -> Script Writer -> Current Part Plan auto-filled.
+  useEffect(() => {
+    if (currentStageId !== "script_writer") return;
+
+    const current = stateRef.current;
+    const hasStoryPlan = !!String(current.storyPlan || "").trim();
+    if (!hasStoryPlan) return;
+
+    const hasWrittenParts = current.scriptParts.some((p) =>
+      !!String(p.draftText || "").trim(),
+    );
+
+    const hasMissingPartPlan =
+      current.scriptParts.length === 0 ||
+      current.scriptParts.some((p) =>
+        !String(p.manualPartPlan || p.sourcePartPlan || "").trim(),
+      );
+
+    if (current.scriptParts.length === 0 || (!hasWrittenParts && hasMissingPartPlan)) {
+      handleInitScriptParts();
+    }
+  }, [currentStageId, state.storyPlan]);
+
 
   const handleGeneratePart = async (index: number) => {
     try {
