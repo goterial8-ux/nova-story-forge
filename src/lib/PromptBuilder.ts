@@ -223,6 +223,67 @@ function previousWrittenPartsContext(partNumber: number, state: ProjectState): s
     .join("\n\n---\n\n");
 }
 
+function getLastApprovedPartVoiceAnchor(state: ProjectState, partNumber: number): string {
+  const previousApprovedParts = state.scriptParts
+    .filter(
+      (p) =>
+        p.partNumber < partNumber &&
+        p.status === "approved" &&
+        p.draftText &&
+        p.draftText.trim().length > 0,
+    )
+    .sort((a, b) => a.partNumber - b.partNumber);
+
+  if (previousApprovedParts.length === 0) return "";
+
+  const lastApproved = previousApprovedParts[previousApprovedParts.length - 1];
+  const paragraphs = lastApproved.draftText
+    .split(/\n+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const lastContent = paragraphs.slice(-5).join(" ").slice(-500);
+
+  return [
+    `VOICE ANCHOR — last 500 characters of the previous approved part (Part ${lastApproved.partNumber} "${lastApproved.partTitle}"):`,
+    `"${lastContent}"`,
+    "",
+    "IMPORTANT: Match this voice, tone, paragraph rhythm, and sentence length exactly. This is your writing standard.",
+  ].join("\n");
+}
+
+function buildSceneAnchorsFromPlan(currentPartPlan: string): string {
+  if (!currentPartPlan || !currentPartPlan.trim()) return "";
+
+  const sceneBlocks = currentPartPlan.split(/(?=^(?:Scene|SCENE|Scene |SCENE )?\d)/m);
+  const anchors: string[] = [];
+
+  for (let i = 0; i < sceneBlocks.length; i++) {
+    const block = sceneBlocks[i].trim();
+    if (!block || block.length < 30) continue;
+
+    const firstLine = block.split("\n")[0].trim();
+    const bodyLines = block.split("\n").slice(1).join("\n").trim();
+    if (!bodyLines || bodyLines.length < 20) continue;
+
+    const lastSentence = bodyLines.match(/[^.!?]*[.!?]\s*$/)?.[0] || bodyLines.slice(-120).trim();
+    const sceneNumber = i + 1;
+
+    anchors.push(
+      `SCENE ${sceneNumber} ANCHOR — Goal: ${firstLine.slice(0, 120)} | Last sentence from previous scene: "${lastSentence.slice(0, 120)}"`,
+    );
+  }
+
+  if (anchors.length === 0) return "";
+
+  return [
+    "",
+    "=== SCENE ANCHORS (apply to each scene in order) ===",
+    anchors.join("\n"),
+    "Apply each anchor before writing its scene. Match the voice anchor above. Keep first-person, short sentences, 120-220 char paragraphs.",
+  ].join("\n");
+}
+
 export function buildPartPrompt(partNumber: number, state: ProjectState): string {
   const part = state.scriptParts.find((p) => p.partNumber === partNumber);
   const partTitle = part?.partTitle || `Part ${partNumber}`;
@@ -231,6 +292,8 @@ export function buildPartPrompt(partNumber: number, state: ProjectState): string
   const manualExtraInstruction = String((part as any)?.manualExtraInstruction || "").trim();
   const manualTargetChars = String((part as any)?.manualTargetChars || "12,000-15,000 characters including spaces").trim();
   const previousContext = previousWrittenPartsContext(partNumber, state);
+  const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
+  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
 
   return `You are a YouTube manga/manhwa recap scriptwriter.
 
@@ -249,6 +312,10 @@ ${currentPartPlan}
 ${previousContext}
 
 Use previous parts only as continuity memory. Do not rewrite them in the answer.
+
+${voiceAnchor}
+
+${sceneAnchors}
 
 === STYLE RULES ===
 ${manualStyleRules || DEFAULT_SCRIPT_STYLE_RULES}
@@ -360,6 +427,8 @@ export function buildRebuildPrompt(
   const part = state.scriptParts.find((p) => p.partNumber === partNumber);
   const partTitle = part?.partTitle || `Part ${partNumber}`;
   const currentPartPlan = partPlanFor(partNumber, part, state);
+  const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
+  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
 
   return `=== FULL PART REBUILD ===
 The previous attempt failed. Discard that failed version.
@@ -380,8 +449,89 @@ ${currentPartPlan}
 REJECTION REPORT:
 ${JSON.stringify(report || {}, null, 2)}
 
+${voiceAnchor}
+
+${sceneAnchors}
+
 STYLE RULES:
 ${DEFAULT_SCRIPT_STYLE_RULES}
 
 Output only the finished clean English script text.`;
 }
+
+export function isOutputTruncated(text: string): boolean {
+  if (!text || text.length < 200) return false;
+  const lastChars = text.slice(-50).trim();
+  if (!lastChars) return false;
+  const sentenceEnders = /[.!?…—–:;"'»»"]/;
+  const lastSentenceComplete = sentenceEnders.test(lastChars);
+  const isBrokenWord = /[a-zA-Z]{2,}$/.test(lastChars) && lastChars.split(/\s+/).length <= 2;
+  return !lastSentenceComplete || isBrokenWord;
+}
+
+function extractLastCompleteParagraph(text: string): string {
+  if (!text) return "";
+  const paragraphs = text.split(/\n{2,}/);
+  if (paragraphs.length < 2) return text;
+  return paragraphs[paragraphs.length - 1].trim();
+}
+
+function findLastSentence(text: string): string {
+  if (!text) return "";
+  const allSentences = text.match(/[^.!?]*[.!?]+/g);
+  if (!allSentences || allSentences.length === 0) return text.slice(-150);
+  return (allSentences[allSentences.length - 1] || "").trim();
+}
+
+export function buildContinuationPrompt(
+  brokenText: string,
+  partNumber: number,
+  state: ProjectState,
+): string {
+  const part = state.scriptParts.find((p) => p.partNumber === partNumber);
+  const partTitle = part?.partTitle || `Part ${partNumber}`;
+  const currentPartPlan = partPlanFor(partNumber, part, state);
+  const previousContext = previousWrittenPartsContext(partNumber, state);
+  const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
+  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
+  const lastParagraph = extractLastCompleteParagraph(brokenText);
+  const lastSentence = findLastSentence(brokenText);
+
+  return `You are a YouTube manga/manhwa recap scriptwriter.
+
+CONTINUE WRITING THE CURRENT PART.
+The previous generation was interrupted. Continue from where it stopped.
+
+Part:
+Part ${partNumber} — ${partTitle}
+
+=== LAST COMPLETE PARAGRAPH (do not rewrite, continue from here) ===
+${lastParagraph}
+
+=== LAST SENTENCE BEFORE INTERRUPTION ===
+"${lastSentence}"
+
+=== CURRENT PART PLAN ===
+${currentPartPlan}
+
+=== PREVIOUS WRITTEN PARTS CONTEXT ===
+${previousContext}
+
+${voiceAnchor}
+
+${sceneAnchors}
+
+=== STYLE RULES (hard standard — follow exactly) ===
+- First person when following the main character
+- Paragraphs: 120-220 characters
+- Sentences: max 12 words
+- No literary monologue, no report tone, no dry summary
+- Rhythm: pressure -> action -> reaction -> result -> new pressure
+- Output only English script text
+
+Command:
+Continue writing Part ${partNumber} from the last complete paragraph shown above.
+Do not repeat or rephrase the last paragraph.
+Start with what logically follows the last sentence.
+Match the voice anchor and style rules exactly.
+Output only the continuation in English.`;
