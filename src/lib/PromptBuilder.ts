@@ -712,14 +712,104 @@ export function buildPrompt(stageId: StageId, state: ProjectState): string {
   return prompt;
 }
 
+
+export function buildManualFullPartPrompt(
+  partNumber: number,
+  state: ProjectState,
+): string {
+  const part = state.scriptParts.find((p) => p.partNumber === partNumber);
+  const partTitle = part?.partTitle || `Part ${partNumber}`;
+  const manualPlan = (part?.manualPartPlan || "").trim();
+  const manualSceneCards = (part?.manualSceneCards || part?.sourceSceneCards || "").trim();
+  const manualStyleRules = (part?.manualStyleRules || "").trim();
+  const manualExtraInstruction = (part?.manualExtraInstruction || "").trim();
+  const manualTargetChars = (part?.manualTargetChars || "13,000-15,000 characters including spaces").trim();
+
+  const defaultStyleRules = `You are writing a full YouTube manga/manhwa recap script part.
+
+Core writing style:
+- Direct first-person recap narration.
+- Simple, fast, visual sentences.
+- Each paragraph must be 120-220 characters including spaces.
+- Each paragraph must contain 2-4 short sentences.
+- Do not put every short sentence on a separate line.
+- Do not write giant paragraphs.
+- Use action -> reaction -> next action.
+- No literary prose.
+- No slow atmosphere.
+- No philosophical monologue.
+- No abstract emotional explanation.
+- Show emotion through action, face, body, crowd, enemy, ally, or visible result.
+- No markdown.
+- No headings.
+- No notes before or after the script.
+- Output only usable script text.`;
+
+  return `=== MANUAL FULL PART WRITER ===
+
+You are writing ONE COMPLETE SCRIPT PART.
+
+Write only:
+Part ${partNumber} — ${partTitle}
+
+Target length for this full part:
+${manualTargetChars}
+
+Hard output rules:
+- Write the complete Part ${partNumber}, not a summary.
+- Do not continue to Part ${partNumber + 1}.
+- Do not write headings like "Part ${partNumber}" or "Scene Card".
+- Do not write notes, explanations, markdown, QA reports, or meta text.
+- Output only the script text.
+- If the input plan and scene cards conflict, follow the scene cards for concrete events.
+- Do not import events, names, resources, enemies, powers, or setting details that are not in the pasted plan/cards.
+- Every normal narrator paragraph must be 120-220 characters including spaces.
+- Each paragraph must contain 2-4 short sentences.
+- Do not create one-sentence micro-paragraphs unless it is dialogue, impact, system, or cliffhanger.
+- Do not create long blocks above 220 characters.
+
+=== CURRENT PART PLAN PASTED BY USER ===
+${manualPlan || "No manual part plan pasted. Use only the current part title and scene cards."}
+
+=== CURRENT PART SCENE CARDS PASTED BY USER ===
+${manualSceneCards || "No manual scene cards pasted. Write only from the current part title and user instruction."}
+
+=== USER STYLE RULES ===
+${manualStyleRules || defaultStyleRules}
+
+=== EXTRA USER INSTRUCTION ===
+${manualExtraInstruction || "No extra instruction."}
+
+=== FINAL COMMAND ===
+Write the full Part ${partNumber} now.
+Use only the pasted current part plan and current part scene cards.
+Follow the style rules strictly.
+Target ${manualTargetChars}.
+Every normal narrator paragraph must be 120-220 characters including spaces.
+Each paragraph must contain 2-4 short sentences.
+Do not write a heading.
+Do not write notes.
+Do not ask questions.
+Output only the script text.`;
+}
+
+
 export function buildPartPrompt(
   partNumber: number,
   state: ProjectState,
 ): string {
+  const part = state.scriptParts.find((p) => p.partNumber === partNumber);
+
+  // Script Writer now uses manual full-part generation by default.
+  // The old automatic PromptBuilder path remains below as a fallback only
+  // if a part record cannot be found.
+  if (part) {
+    return buildManualFullPartPrompt(partNumber, state);
+  }
+
   if (state.claudeLiteMode !== false) {
     return buildClaudeLitePartPrompt(partNumber, state);
   }
-  const part = state.scriptParts.find((p) => p.partNumber === partNumber);
 
   let stage5Prompt = state.promptRegistry.stageFiveScriptWriterPrompt;
   stage5Prompt = stage5Prompt.replaceAll(

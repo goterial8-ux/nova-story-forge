@@ -2,17 +2,42 @@ import React from "react";
 import { ScriptPart, StageStatus, AutopilotState } from "../types";
 import {
   Check,
-  Edit3,
-  Trash2,
-  RefreshCw,
-  Layers,
-  Play,
-  Square,
+  Clipboard,
+  Download,
   Eraser,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
+  Layers,
+  RefreshCw,
+  Trash2,
+  Wand2,
 } from "lucide-react";
+
+const DEFAULT_STYLE_RULES = `You write a YouTube manga/manhwa recap script in English.
+
+Sentence rules:
+- Use short, direct sentences.
+- Maximum twelve words per sentence whenever possible.
+- Each paragraph must contain two to four short sentences.
+- Every normal narrator paragraph must be 120-220 characters including spaces.
+- Do not put every sentence on a separate line.
+- Do not create giant paragraphs.
+
+Recap rhythm:
+- Action.
+- Reaction.
+- Next action.
+- Result.
+- New pressure.
+
+Forbidden:
+- No literary prose.
+- No slow atmosphere.
+- No philosophical monologue.
+- No abstract emotional explanation.
+- No markdown.
+- No headings.
+- No notes before or after the script.
+
+Output only the script text.`;
 
 interface ScriptWriterPanelProps {
   parts: ScriptPart[];
@@ -31,454 +56,413 @@ interface ScriptWriterPanelProps {
   autopilotState?: AutopilotState;
 }
 
+function buildManualPromptPreview(part: ScriptPart): string {
+  const target = part.manualTargetChars?.trim() || "13,000-15,000 characters including spaces";
+  const styleRules = part.manualStyleRules?.trim() || DEFAULT_STYLE_RULES;
+  const partPlan = part.manualPartPlan?.trim() || "[PASTE CURRENT PART PLAN HERE]";
+  const sceneCards =
+    part.manualSceneCards?.trim() ||
+    part.sourceSceneCards?.trim() ||
+    "[PASTE CURRENT PART SCENE CARDS HERE]";
+  const extra = part.manualExtraInstruction?.trim() || "No extra instruction.";
+
+  return `=== MANUAL FULL PART WRITER ===
+
+You are writing ONE COMPLETE SCRIPT PART.
+
+Write only:
+Part ${part.partNumber} — ${part.partTitle}
+
+Target length:
+${target}
+
+Hard output rules:
+- Write the complete Part ${part.partNumber}, not a summary.
+- Do not continue to Part ${part.partNumber + 1}.
+- Do not write headings like "Part ${part.partNumber}" or "Scene Card".
+- Do not write notes, explanations, markdown, QA reports, or meta text.
+- Output only the script text.
+- Every normal narrator paragraph must be 120-220 characters including spaces.
+- Each paragraph must contain 2-4 short sentences.
+- Do not create one-sentence micro-paragraphs unless it is dialogue, impact, system, or cliffhanger.
+- Do not create long blocks above 220 characters.
+
+=== CURRENT PART PLAN PASTED BY USER ===
+${partPlan}
+
+=== CURRENT PART SCENE CARDS PASTED BY USER ===
+${sceneCards}
+
+=== USER STYLE RULES ===
+${styleRules}
+
+=== EXTRA USER INSTRUCTION ===
+${extra}
+
+=== FINAL COMMAND ===
+Write the full Part ${part.partNumber} now.
+Use only the pasted current part plan and current part scene cards.
+Follow the style rules strictly.
+Target ${target}.
+Output only the script text.`;
+}
+
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function ScriptWriterPanel({
   parts,
   updatePart,
   onGeneratePart,
-  onGenerateAllParts,
-  onStopBatchGeneration,
   onClearAllParts,
   onInitScriptParts,
   onClearPart,
   isBatchGenerating,
-  onCheckPart,
-  onRebuildPart,
   onAssembleScript,
   stageStatus,
-  autopilotState,
 }: ScriptWriterPanelProps) {
-  const [expandedParts, setExpandedParts] = React.useState<
-    Record<number, boolean>
-  >({});
-
-  // Helper to toggle a part
-  const toggleExpand = (idx: number) => {
-    setExpandedParts((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
-  // Helper to check if a part is expanded
-  const isExpanded = (idx: number) => {
-    if (expandedParts[idx] !== undefined) {
-      return expandedParts[idx];
-    }
-    const part = parts[idx];
-    const isCurrentlyGenerating =
-      isBatchGenerating &&
-      !part.draftText &&
-      idx === parts.findIndex((p) => !p.draftText);
-    if (isCurrentlyGenerating) return true;
-
-    // Default: start collapsed if draft text is already present
-    return idx === 0 && !part.draftText;
-  };
-
-  const toggleExpandAll = (expand: boolean) => {
-    const next: Record<number, boolean> = {};
-    parts.forEach((_, i) => {
-      next[i] = expand;
-    });
-    setExpandedParts(next);
-  };
-
-  const activeGeneratingIdx = isBatchGenerating
-    ? parts.findIndex((p) => !p.draftText)
-    : -1;
+  const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [copiedPrompt, setCopiedPrompt] = React.useState(false);
+  const [copiedOutput, setCopiedOutput] = React.useState(false);
 
   React.useEffect(() => {
-    if (activeGeneratingIdx !== -1) {
-      setExpandedParts((prev) => ({ ...prev, [activeGeneratingIdx]: true }));
+    if (selectedIndex >= parts.length) {
+      setSelectedIndex(Math.max(0, parts.length - 1));
     }
-  }, [activeGeneratingIdx, isBatchGenerating]);
+  }, [parts.length, selectedIndex]);
 
   if (parts.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50 border border-slate-200 mt-4 shadow-sm p-8 text-center flex-col gap-4">
         <Layers className="w-12 h-12 text-slate-300" />
         <p className="text-slate-500 font-medium">
-          No script parts found. Ensure Story Plan is approved.
+          No script parts found. Sync parts from the locked Story Plan first.
         </p>
+        <button
+          onClick={onInitScriptParts}
+          className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 border-none text-xs font-semibold transition-all shadow-sm rounded-sm"
+        >
+          Sync with Plan
+        </button>
       </div>
     );
   }
 
-  const completedParts = parts.filter(
-    (p) => p.draftText && p.draftText.length > 0,
-  ).length;
-  const totalParts = parts.length;
-  const progressPercent = (completedParts / totalParts) * 100;
-  const allApproved =
-    parts.length > 0 && parts.every((p) => p.status === "approved");
+  const part = parts[selectedIndex];
+  const writtenParts = parts.filter((p) => p.draftText?.trim()).length;
+  const approvedParts = parts.filter((p) => p.status === "approved").length;
+  const allApproved = parts.length > 0 && parts.every((p) => p.status === "approved");
+  const promptPreview = buildManualPromptPreview(part);
+  const manualSceneCardsValue = part.manualSceneCards ?? part.sourceSceneCards ?? "";
+  const manualStyleValue = part.manualStyleRules ?? DEFAULT_STYLE_RULES;
+  const manualTargetValue = part.manualTargetChars ?? "13,000-15,000 characters including spaces";
 
-  const hasContaminatedParts = parts.some((p) => {
-    const text = (p.draftText || "").toLowerCase();
-    const report = JSON.stringify(p.supervisorReport || {}).toLowerCase();
-    const driftKeywords = [
-      "facility",
-      "toxic trench",
-      "proctor",
-      "plasma battery",
-      "exoskeleton",
-      "dungeon/facility",
-    ];
-    return driftKeywords.some((kw) => text.includes(kw) || report.includes(kw));
-  });
+  const copyPrompt = async () => {
+    await navigator.clipboard.writeText(promptPreview);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 1500);
+  };
+
+  const copyOutput = async () => {
+    await navigator.clipboard.writeText(part.draftText || "");
+    setCopiedOutput(true);
+    setTimeout(() => setCopiedOutput(false), 1500);
+  };
+
+  const fullScript = parts
+    .filter((p) => p.draftText?.trim())
+    .map((p) => `## Part ${p.partNumber}: ${p.partTitle}\n\n${p.draftText.trim()}`)
+    .join("\n\n\n");
 
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col gap-4 mt-4 relative">
-      {/* Script Progress Toolbar */}
-      <div className="sticky top-0 z-10 bg-white border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase font-black tracking-widest text-slate-400">
-              Script Progress
-            </span>
-            <span className="text-lg font-mono font-bold text-slate-900">
-              {completedParts} <span className="text-slate-300">/</span>{" "}
-              {totalParts}{" "}
-              <span className="text-xs text-slate-500 font-normal ml-1 tracking-tight">
-                Parts Written
-              </span>
-            </span>
+    <div className="flex-1 overflow-hidden flex flex-col gap-4 mt-4">
+      <div className="bg-white border border-slate-200 shadow-sm p-4 rounded-sm flex flex-col gap-3 shrink-0">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+              Manual Full Part Writer
+            </div>
+            <div className="text-sm text-slate-600 mt-1">
+              One request writes one complete part. No autopilot, no supervisor loop, no automatic repair.
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {!isBatchGenerating ? (
-              <button
-                onClick={onGenerateAllParts}
-                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all shadow-sm cursor-pointer"
-              >
-                <Play className="w-3 h-3 fill-current" />{" "}
-                {completedParts > 0 ? "Resume Batch" : "Generate All"}
-              </button>
-            ) : (
-              <button
-                onClick={onStopBatchGeneration}
-                className="flex items-center gap-2 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all shadow-sm cursor-pointer"
-              >
-                <Square className="w-3 h-3 fill-current" /> Stop
-              </button>
-            )}
-            <button
-              onClick={() => toggleExpandAll(true)}
-              className="flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 cursor-pointer"
-              title="Expand all"
-            >
-              Expand All
-            </button>
-            <button
-              onClick={() => toggleExpandAll(false)}
-              className="flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 cursor-pointer"
-              title="Collapse all"
-            >
-              Collapse All
-            </button>
-            <button
-              onClick={onClearAllParts}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 cursor-pointer"
-            >
-              <Eraser className="w-3 h-3" /> Clear All
-            </button>
+
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={onInitScriptParts}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 cursor-pointer"
-              title="Sync parts list with Story Plan"
+              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200"
+              title="Recreate the parts list from Story Plan titles"
             >
-              <RefreshCw className="w-3 h-3" /> Sync with Plan
+              <RefreshCw className="w-3 h-3" /> Sync Parts
+            </button>
+
+            <button
+              onClick={onClearAllParts}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200"
+            >
+              <Eraser className="w-3 h-3" /> Clear All Outputs
+            </button>
+
+            <button
+              onClick={() => {
+                onAssembleScript();
+                downloadText(`manual_full_script_${Date.now()}.txt`, fullScript);
+              }}
+              disabled={!fullScript}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3 h-3" /> Download Written Parts
             </button>
           </div>
         </div>
-        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-500 transition-all duration-500"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </div>
 
-      {hasContaminatedParts && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 text-xs font-medium rounded-sm flex items-start gap-2.5 shadow-sm mx-1">
-          <span className="text-sm shrink-0">⚠️</span>
-          <div>
-            Current script parts were generated before the latest prompt rules. Clear or rebuild them before continuing.
+        <div className="grid grid-cols-3 gap-3 text-xs">
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Written</div>
+            <div className="font-mono font-black text-slate-900">{writtenParts} / {parts.length}</div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Approved manually</div>
+            <div className="font-mono font-black text-slate-900">{approvedParts} / {parts.length}</div>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Current part chars</div>
+            <div className="font-mono font-black text-slate-900">{(part.draftText || "").length}</div>
           </div>
         </div>
-      )}
 
-      {parts.map((part, idx) => {
-        const expanded = isExpanded(idx);
-        return (
-          <div
-            key={idx}
-            className="bg-white border border-slate-200 shadow-sm p-4 flex flex-col gap-3 relative overflow-hidden rounded-md"
-          >
-            {/* Active Generation Overlay */}
-            {isBatchGenerating &&
-              !part.draftText &&
-              idx === parts.findIndex((p) => !p.draftText) && (
-                <div className="absolute inset-x-0 top-0 h-1 bg-blue-500 animate-[shimmer_2s_infinite]" />
-              )}
+        {isBatchGenerating && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-sm text-xs font-semibold">
+            Generation is running. Wait for it to finish before editing the current prompt.
+          </div>
+        )}
+      </div>
 
-            <div
-              onClick={() => toggleExpand(idx)}
-              className="flex justify-between items-center border-b border-transparent pb-1 cursor-pointer select-none hover:bg-slate-50 transition-colors -mx-4 -mt-4 px-4 py-3 min-w-0"
-            >
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 min-w-0 flex-1 pr-4">
-                <span className="shrink-0 text-slate-400 font-mono text-xs font-bold bg-slate-100 px-1 py-0.5 rounded">
-                  Part {part.partNumber}
-                </span>
-                <span
-                  className="truncate flex-1 text-slate-850"
-                  title={part.partTitle}
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-hidden">
+        <aside className="xl:col-span-3 bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden flex flex-col min-h-0">
+          <div className="p-3 border-b border-slate-200 bg-slate-50 text-[10px] uppercase font-black tracking-widest text-slate-500">
+            Parts
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {parts.map((p, idx) => {
+              const active = idx === selectedIndex;
+              return (
+                <button
+                  key={`${p.partNumber}-${idx}`}
+                  onClick={() => setSelectedIndex(idx)}
+                  className={`w-full text-left p-3 border-b border-slate-100 transition-colors ${
+                    active ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50 text-slate-800"
+                  }`}
                 >
-                  {part.partTitle}
-                </span>
-                <label
-                  onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 text-[10px] font-normal flex items-center gap-1 text-slate-500 font-sans tracking-normal ml-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={part.isComplete}
-                    onChange={(e) =>
-                      updatePart(idx, { isComplete: e.target.checked })
-                    }
-                    className="rounded-sm border-slate-300"
-                  />
-                  Done?
-                </label>
-              </h3>
-              <div
-                className="flex items-center gap-2 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {(() => {
-                  let badgeText = part.status.replace("_", " ");
-                  let badgeClass =
-                    "bg-slate-50 text-slate-500 border-slate-200";
-
-                  if (
-                    autopilotState &&
-                    autopilotState.enabled &&
-                    autopilotState.currentPartIndex === idx
-                  ) {
-                    const stepTextMap: Record<string, string> = {
-                      generate: "generating part",
-                      check: "evaluating",
-                      recheck: "evaluating",
-                      soft_cleanup: "soft cleanup",
-                      repair: "repairing drift",
-                      rebuild: "rebuilding from plan",
-                      cooldown: "quota cooldown",
-                      approved: "approved",
-                      blocked: "blocked",
-                    };
-                    badgeText =
-                      stepTextMap[autopilotState.currentStep] ||
-                      autopilotState.currentStep;
-                    badgeClass =
-                      "bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse";
-                  } else {
-                    if (
-                      autopilotState &&
-                      !autopilotState.enabled &&
-                      autopilotState.currentStep === "blocked" &&
-                      autopilotState.currentPartIndex === idx
-                    ) {
-                      badgeText = "blocked after max attempts";
-                      badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
-                    } else if (part.status === "locked") {
-                      badgeClass =
-                        "bg-emerald-50 text-emerald-700 border-emerald-200";
-                    } else if (part.status === "approved") {
-                      badgeClass = "bg-blue-50 text-blue-700 border-blue-200";
-                    } else if (part.status === "needs_repair") {
-                      badgeClass =
-                        "bg-amber-50 text-amber-700 border-amber-200";
-                      if (
-                        part.supervisorReport?.status === "needs_serious_repair"
-                      ) {
-                        badgeText = "hard drift found";
-                        badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
-                      }
-                    } else if (
-                      part.status === "not_started" &&
-                      autopilotState &&
-                      autopilotState.enabled &&
-                      idx > autopilotState.currentPartIndex
-                    ) {
-                      badgeText = "waiting";
-                    }
-                  }
-
-                  return (
-                    <span
-                      className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 border rounded-sm ${badgeClass}`}
-                    >
-                      {badgeText}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider">
+                      Part {p.partNumber}
                     </span>
-                  );
-                })()}
+                    <span
+                      className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${
+                        p.status === "approved"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : p.draftText
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : "bg-slate-50 text-slate-500 border-slate-200"
+                      }`}
+                    >
+                      {p.status === "approved" ? "approved" : p.draftText ? "written" : "empty"}
+                    </span>
+                  </div>
+                  <div className={`mt-1 text-xs line-clamp-2 ${active ? "text-slate-200" : "text-slate-600"}`}>
+                    {p.partTitle}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
 
-                <div className="flex items-center gap-1 ml-2">
-                  {onRebuildPart &&
-                    part.status === "needs_repair" &&
-                    part.supervisorReport?.status ===
-                      "needs_serious_repair" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRebuildPart(idx);
-                        }}
-                        className="px-2 py-1 text-[10px] font-bold tracking-wide uppercase bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 rounded-sm transition-colors cursor-pointer mr-1"
-                        title="Rebuild This Part From Plan"
-                      >
-                        Rebuild From Plan
-                      </button>
-                    )}
-                  {part.status !== "locked" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onGeneratePart(idx);
-                      }}
-                      className="p-1 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
-                      title="Generate Part"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  )}
-                  {part.draftText && part.status !== "locked" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onClearPart(idx);
-                      }}
-                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
-                      title="Clear Part"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+        <section className="xl:col-span-9 min-h-0 flex flex-col gap-4 overflow-y-auto pr-1">
+          <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-4 flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+                  Current full part request
                 </div>
+                <h3 className="text-lg font-black text-slate-900 mt-1">
+                  Part {part.partNumber}: {part.partTitle}
+                </h3>
+              </div>
 
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleExpand(idx);
-                  }}
-                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer ml-1"
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={copyPrompt}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200"
                 >
-                  {expanded ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </div>
+                  <Clipboard className="w-3 h-3" /> {copiedPrompt ? "Copied" : "Copy Prompt"}
+                </button>
+
+                <button
+                  onClick={() => onGeneratePart(selectedIndex)}
+                  disabled={isBatchGenerating || stageStatus === "locked"}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Wand2 className="w-3 h-3" /> Generate Full Part
+                </button>
+
+                <button
+                  onClick={() => updatePart(selectedIndex, { status: "approved", isComplete: true })}
+                  disabled={!part.draftText?.trim() || stageStatus === "locked"}
+                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Check className="w-3 h-3" /> Approve Manually
+                </button>
               </div>
             </div>
 
-            {expanded && (
-              <>
-                <div className="text-[12px] text-slate-600 bg-slate-50 p-3 border border-slate-100 rounded leading-relaxed mt-1">
-                  <span className="font-bold text-slate-800">Part Focus:</span>{" "}
-                  {part.partTitle}
-                </div>
-                <div className="relative group mt-2">
-                  <textarea
-                    className="w-full min-h-[140px] text-[13px] text-slate-700 leading-relaxed resize-y focus:outline-none focus:border-blue-500 p-2 border border-slate-200 hover:border-slate-300 rounded bg-slate-50/50 font-serif"
-                    value={part.draftText}
-                    onChange={(e) => {
-                      const updates: Partial<ScriptPart> = {
-                        draftText: e.target.value,
-                      };
-                      if (part.status === "approved") {
-                        updates.status = "generated";
-                      }
-                      updates.validationIssues = [];
-                      updates.supervisorReport = undefined;
-                      updatePart(idx, updates);
-                      onStopBatchGeneration();
-                    }}
-                    placeholder={`Draft content for Part ${part.partNumber}...`}
-                    disabled={part.status === "locked"}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                  Current Part Plan — paste manually
+                </span>
+                <textarea
+                  value={part.manualPartPlan || ""}
+                  onChange={(e) => updatePart(selectedIndex, { manualPartPlan: e.target.value })}
+                  placeholder="Paste only the current part plan here. Example: PART FIVE — ГОРОД НАЧИНАЕТ ДВИГАТЬСЯ..."
+                  className="h-56 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+                  disabled={stageStatus === "locked"}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                  Current Part Scene Cards — paste manually
+                </span>
+                <textarea
+                  value={manualSceneCardsValue}
+                  onChange={(e) => updatePart(selectedIndex, { manualSceneCards: e.target.value })}
+                  placeholder="Paste only scene cards for this part here."
+                  className="h-56 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+                  disabled={stageStatus === "locked"}
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <label className="lg:col-span-2 flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                  Style rules
+                </span>
+                <textarea
+                  value={manualStyleValue}
+                  onChange={(e) => updatePart(selectedIndex, { manualStyleRules: e.target.value })}
+                  className="h-44 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+                  disabled={stageStatus === "locked"}
+                />
+              </label>
+
+              <div className="flex flex-col gap-4">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                    Target characters
+                  </span>
+                  <input
+                    value={manualTargetValue}
+                    onChange={(e) => updatePart(selectedIndex, { manualTargetChars: e.target.value })}
+                    className="border border-slate-200 bg-slate-50 p-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+                    disabled={stageStatus === "locked"}
                   />
-                  {((isBatchGenerating &&
-                    !part.draftText &&
-                    idx === parts.findIndex((p) => !p.draftText)) ||
-                    (autopilotState?.enabled &&
-                      autopilotState.currentPartIndex === idx)) && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] z-10">
-                      <div className="flex items-center gap-3 bg-white px-6 py-3 shadow-xl border border-slate-200 rounded-full">
-                        <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                        <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">
-                          {autopilotState?.enabled &&
-                          autopilotState.currentPartIndex === idx
-                            ? `${autopilotState.currentStep} Part ${part.partNumber}...`
-                            : `Writing Part ${part.partNumber}...`}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                </label>
 
-                <div className="flex justify-between items-center pt-2">
-                  <div className="text-[10px] font-mono text-slate-400">
-                    {part.wordOrCharacterCount} chars | {part.avatarCount}{" "}
-                    avatars |
-                    {part.hasGenerationResidue ? (
-                      <span className="text-rose-500 ml-1">
-                        Residue Detected
-                      </span>
-                    ) : (
-                      <span className="text-emerald-500 ml-1">No Residue</span>
-                    )}
-                  </div>
-                  {part.draftText && part.status !== "locked" && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => onCheckPart(idx)}
-                        className="text-[11px] font-bold text-slate-600 hover:text-blue-600 flex items-center gap-1 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded border border-slate-200 transition-colors"
-                      >
-                        Check & Approve
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <label className="flex flex-col gap-1 flex-1">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                    Extra instruction
+                  </span>
+                  <textarea
+                    value={part.manualExtraInstruction || ""}
+                    onChange={(e) => updatePart(selectedIndex, { manualExtraInstruction: e.target.value })}
+                    placeholder="Example: write more comedy in the turtle movement scene; do not mention future Part 6..."
+                    className="flex-1 min-h-28 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+                    disabled={stageStatus === "locked"}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
 
-                {part.validationIssues && part.validationIssues.length > 0 && (
-                  <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded">
-                    <div className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-1">
-                      Validation Issues
-                    </div>
-                    <ul className="text-[11px] text-rose-600 list-disc list-inside space-y-0.5">
-                      {part.validationIssues.map((issue, i) => (
-                        <li key={i}>{issue}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
+          <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+                  Generated / editable output
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {(part.draftText || "").length} characters. You can edit manually before approving.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={copyOutput}
+                  disabled={!part.draftText}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 disabled:opacity-40"
+                >
+                  <Clipboard className="w-3 h-3" /> {copiedOutput ? "Copied" : "Copy Output"}
+                </button>
+
+                <button
+                  onClick={() => downloadText(`part_${part.partNumber}_${Date.now()}.txt`, part.draftText || "")}
+                  disabled={!part.draftText}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 disabled:opacity-40"
+                >
+                  <Download className="w-3 h-3" /> Download Part
+                </button>
+
+                <button
+                  onClick={() => onClearPart(selectedIndex)}
+                  disabled={!part.draftText || stageStatus === "locked"}
+                  className="flex items-center gap-2 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-rose-200 disabled:opacity-40"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear Output
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              value={part.draftText || ""}
+              onChange={(e) =>
+                updatePart(selectedIndex, {
+                  draftText: e.target.value,
+                  status: e.target.value.trim() ? "generated" : "not_started",
+                  wordOrCharacterCount: e.target.value.length,
+                })
+              }
+              placeholder="Generated full part will appear here. You can also paste a manually generated part here."
+              className="min-h-[420px] resize-y border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
+              disabled={stageStatus === "locked"}
+            />
           </div>
-        );
-      })}
-      <div className="pt-4 pb-12 flex flex-col items-center gap-2">
-        {!allApproved && (
-          <div className="text-xs text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-4 py-2 rounded shadow-sm text-center">
-            ⚠️ All script parts must pass Check & Approve before assembly.
-          </div>
-        )}
-        <button
-          onClick={onAssembleScript}
-          disabled={!allApproved}
-          title={
-            !allApproved
-              ? "All script parts must pass Check & Approve before assembly."
-              : "Assemble Full Script"
-          }
-          className="px-8 py-3 bg-slate-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
-        >
-          <Layers className="w-4 h-4" /> Assemble Full Script
-        </button>
+
+          {allApproved && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-sm flex items-center justify-between gap-3">
+              <div className="text-xs font-semibold">
+                All parts are manually approved. You can assemble the full script now.
+              </div>
+              <button
+                onClick={onAssembleScript}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold uppercase tracking-wider rounded-sm"
+              >
+                Assemble Script
+              </button>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

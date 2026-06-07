@@ -52,6 +52,15 @@ export interface ScriptPart {
   hasDuplicateBlocks: boolean;
   avatarCount: number;
   validationIssues?: string[];
+
+  // Manual Full Part Writer fields.
+  // These let the user paste the exact current-part plan, scene cards,
+  // style rules, and target length before generating one complete part.
+  manualPartPlan?: string;
+  manualSceneCards?: string;
+  manualStyleRules?: string;
+  manualExtraInstruction?: string;
+  manualTargetChars?: string;
 }
 
 export interface CleanExportSettings {
