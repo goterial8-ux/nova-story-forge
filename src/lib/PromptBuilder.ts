@@ -713,84 +713,132 @@ export function buildPrompt(stageId: StageId, state: ProjectState): string {
 }
 
 
+function buildPreviousWrittenPartsContext(partNumber: number, state: ProjectState): string {
+  const previousParts = state.scriptParts
+    .filter((p) => p.partNumber < partNumber && p.draftText && p.draftText.trim().length > 0)
+    .sort((a, b) => a.partNumber - b.partNumber);
+
+  if (previousParts.length === 0) {
+    return "None. This is the first written part.";
+  }
+
+  return previousParts
+    .map((p) => {
+      const paragraphs = p.draftText
+        .split(/\n+/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const opening = paragraphs.slice(0, 2).join(" ");
+      const ending = paragraphs.slice(-3).join(" ");
+
+      return [
+        `Part ${p.partNumber}: ${p.partTitle}`,
+        `Status: ${p.status}`,
+        `Opening context: ${clipForWriter(opening, 450) || "Not available."}`,
+        `Latest ending / continuity state: ${clipForWriter(ending, 900) || "Not available."}`,
+      ].join("\n");
+    })
+    .join("\n\n---\n\n");
+}
+
 export function buildManualFullPartPrompt(
   partNumber: number,
   state: ProjectState,
 ): string {
   const part = state.scriptParts.find((p) => p.partNumber === partNumber);
   const partTitle = part?.partTitle || `Part ${partNumber}`;
-  const manualPlan = (part?.manualPartPlan || "").trim();
+  const manualPlan = (part?.manualPartPlan || part?.sourcePartPlan || "").trim();
   const manualSceneCards = (part?.manualSceneCards || part?.sourceSceneCards || "").trim();
   const manualStyleRules = (part?.manualStyleRules || "").trim();
   const manualExtraInstruction = (part?.manualExtraInstruction || "").trim();
-  const manualTargetChars = (part?.manualTargetChars || "13,000-15,000 characters including spaces").trim();
+  const manualTargetChars = (part?.manualTargetChars || "12,000-15,000 characters including spaces").trim();
+  const previousWrittenPartsContext = buildPreviousWrittenPartsContext(partNumber, state);
 
-  const defaultStyleRules = `You are writing a full YouTube manga/manhwa recap script part.
+  const cleanDefaultStyleRules = `Ты сценарист YouTube manga/manhwa recap.
 
-Core writing style:
-- Direct first-person recap narration.
-- Simple, fast, visual sentences.
-- Each paragraph must be 120-220 characters including spaces.
-- Each paragraph must contain 2-4 short sentences.
-- Do not put every short sentence on a separate line.
-- Do not write giant paragraphs.
-- Use action -> reaction -> next action.
-- No literary prose.
-- No slow atmosphere.
-- No philosophical monologue.
-- No abstract emotional explanation.
-- Show emotion through action, face, body, crowd, enemy, ally, or visible result.
-- No markdown.
-- No headings.
-- No notes before or after the script.
-- Output only usable script text.`;
+Я дам тебе Story Plan и Scene Cards. Используй их как единственный источник сценария.
 
-  return `=== MANUAL FULL PART WRITER ===
+Когда я прошу написать Part 1, Part 2 и так далее, ты пишешь полную часть сценария по соответствующей части плана и scene cards.
 
-You are writing ONE COMPLETE SCRIPT PART.
+Не придумывай новую структуру.
+Не переписывай план.
+Не сокращай часть до пересказа.
+Не объясняй, что ты делаешь.
+Выдавай только готовый текст сценария.
 
-Write only:
+Формат сценария:
+- Язык сценария: English.
+- Основной голос: first person от лица главного героя.
+- Третье лицо разрешено, когда нужно показать действия других персонажей, реакцию врагов, толпы, семьи, армии, правителя или событие, которое герой не видит напрямую.
+- Стиль: YouTube manga/manhwa recap.
+- Текст должен звучать как voiceover для видео.
+
+Объём:
+- Одна команда = одна полная часть.
+- Обычная длина части: 12,000-15,000 characters including spaces, если я не укажу другой диапазон.
+- Не заканчивай часть слишком рано.
+- Если ты просто перечислил события из плана, это плохо.
+- Каждую сцену раскрывай через действия, реакции, последствия и напряжение.
+
+Стиль:
+- Пиши просто, ясно, драматично и визуально.
+- Не пиши как сухой пересказ.
+- Не пиши как отчёт.
+- Не пиши как анализ.
+- Ритм: давление → действие → реакция → результат → новое давление.
+
+Абзацы:
+- Каждый обычный абзац должен быть удобным для озвучки.
+- Ориентир: 120-220 characters including spaces.
+- Один абзац обычно содержит 2-4 коротких предложения.
+- Не делай огромные абзацы.
+- Не ставь каждое короткое предложение с новой строки.
+- Абзац = один визуальный beat.
+
+Раскрытие сцен:
+- Каждую важную scene card раскрывай последовательностью beat-ов.
+- Покажи ситуацию, угрозу, что герой замечает, что герой делает, что меняется, кто реагирует, какой результат и какое новое напряжение появляется.
+- Не выкидывай важный бэкграунд из плана.
+- Если в плане есть детство, отец, бедность, долги, унижение, опыт, обучение, страх или личная травма, используй это через действие и ситуацию.
+
+Запрещено:
+- Не выводи технические слова и мусор: WRITER, STAGE, STORY, CORE, FINAL, HARD, THIS, PART.
+- Не выводи системные сообщения.
+- Не выводи китайские или служебные сообщения об остановке генерации.
+- Не меняй имена персонажей.`;
+
+  return `Ты сценарист YouTube manga/manhwa recap.
+
+Пиши только выбранную часть сценария.
+
+Часть:
 Part ${partNumber} — ${partTitle}
 
-Target length for this full part:
+Объём:
 ${manualTargetChars}
 
-Hard output rules:
-- Write the complete Part ${partNumber}, not a summary.
-- Do not continue to Part ${partNumber + 1}.
-- Do not write headings like "Part ${partNumber}" or "Scene Card".
-- Do not write notes, explanations, markdown, QA reports, or meta text.
-- Output only the script text.
-- If the input plan and scene cards conflict, follow the scene cards for concrete events.
-- Do not import events, names, resources, enemies, powers, or setting details that are not in the pasted plan/cards.
-- Every normal narrator paragraph must be 120-220 characters including spaces.
-- Each paragraph must contain 2-4 short sentences.
-- Do not create one-sentence micro-paragraphs unless it is dialogue, impact, system, or cliffhanger.
-- Do not create long blocks above 220 characters.
+=== CURRENT PART PLAN ===
+${manualPlan || "[CURRENT PART PLAN IS EMPTY]"}
 
-=== CURRENT PART PLAN PASTED BY USER ===
-${manualPlan || "No manual part plan pasted. Use only the current part title and scene cards."}
+=== CURRENT PART SCENE CARDS ===
+${manualSceneCards || "[CURRENT PART SCENE CARDS ARE EMPTY]"}
 
-=== CURRENT PART SCENE CARDS PASTED BY USER ===
-${manualSceneCards || "No manual scene cards pasted. Write only from the current part title and user instruction."}
+=== PREVIOUS WRITTEN PARTS CONTEXT ===
+${previousWrittenPartsContext}
 
-=== USER STYLE RULES ===
-${manualStyleRules || defaultStyleRules}
+Используй предыдущие части только как память о том, что уже произошло. Не переписывай их в ответе.
 
-=== EXTRA USER INSTRUCTION ===
+=== STYLE RULES ===
+${manualStyleRules || cleanDefaultStyleRules}
+
+=== EXTRA INSTRUCTION ===
 ${manualExtraInstruction || "No extra instruction."}
 
-=== FINAL COMMAND ===
-Write the full Part ${partNumber} now.
-Use only the pasted current part plan and current part scene cards.
-Follow the style rules strictly.
-Target ${manualTargetChars}.
-Every normal narrator paragraph must be 120-220 characters including spaces.
-Each paragraph must contain 2-4 short sentences.
-Do not write a heading.
-Do not write notes.
-Do not ask questions.
-Output only the script text.`;
+Команда:
+Напиши полную Part ${partNumber}.
+Используй Current Part Plan и Current Part Scene Cards как основу.
+Соблюдай стиль и объём.
+Выдай только готовый текст сценария на English.`;
 }
 
 

@@ -21,7 +21,7 @@ import {
   validateScriptText,
   validationIssueSummary,
 } from "./lib/scriptValidation";
-import { extractPartSlice } from "./lib/partUtils";
+import { extractPartHeadings, extractPartSlice } from "./lib/partUtils";
 
 function softenSceneCardsSupervisorReport(
   report: SupervisorReport,
@@ -311,7 +311,7 @@ export default function App() {
         } catch {
           console.error("Backend non-JSON response on attempt", attempt, raw);
           throw new Error(
-            "Backend returned non-JSON response. Intermediary service timeout. Retrying...",
+            `HTTP ${response.status} non-JSON response from backend/provider. ${raw.slice(0, 300)}`,
           );
         }
 
@@ -345,14 +345,36 @@ export default function App() {
           throw new Error("Generation stopped by user.");
         }
 
+        // Show a temporary visual message of retrying
+        const errorMessage = String(err.message || err);
+        const lowerErrorMessage = errorMessage.toLowerCase();
+
+        // Do not hammer the provider on fatal/manual-writer errors.
+        // 505 / loop termination usually means the upstream model/gateway rejected or killed the long generation.
+        // Retrying immediately only burns quota and can create duplicate stuck requests.
+        const isFatalProviderOutputError =
+          lowerErrorMessage.includes("http 505") ||
+          lowerErrorMessage.includes(" 505") ||
+          lowerErrorMessage.includes("repeating output loop") ||
+          lowerErrorMessage.includes("repetitive output") ||
+          lowerErrorMessage.includes("auto terminated") ||
+          lowerErrorMessage.includes("автоматически останов") ||
+          errorMessage.includes("已自动终止") ||
+          errorMessage.includes("检测到模型重复输出循环");
+
+        if (isFatalProviderOutputError) {
+          setGenerationAttempt(0);
+          setWarningMessage(
+            "Provider stopped this full-part generation. Lower the target length or simplify the prompt, then regenerate this part.",
+          );
+          throw err;
+        }
+
         if (attempt >= maxAttempts) {
           setGenerationAttempt(0);
           throw err;
         }
 
-        // Show a temporary visual message of retrying
-        const errorMessage = String(err.message || err);
-        const lowerErrorMessage = errorMessage.toLowerCase();
         let waitTime = 2000;
 
         // A transient abort is an AbortError that happened before the actual timeout period (e.g. browser tab suspended, server restarted)
@@ -588,43 +610,6 @@ export default function App() {
         }
 
         const currentPart = parts[currentPartIndex];
-
-        // Strict sequential guard:
-        // Autopilot must never work on Part N+1 while any earlier part is not approved.
-        const firstUnapprovedIndex = parts.findIndex(
-          (p) => p.status !== "approved",
-        );
-
-        if (
-          firstUnapprovedIndex !== -1 &&
-          firstUnapprovedIndex < currentPartIndex
-        ) {
-          const firstUnapprovedPart = parts[firstUnapprovedIndex];
-          updateState({
-            autopilotState: {
-              ...currentAP,
-              currentPartIndex: firstUnapprovedIndex,
-              currentStep: firstUnapprovedPart.draftText ? "check" : "generate",
-              retryAfterAt: null,
-              lastError: `Autopilot moved back to Part ${firstUnapprovedPart.partNumber} because it is not approved yet.`,
-            },
-          });
-          return;
-        }
-
-        // If the current part is already approved, do not re-check, repair, or rebuild it.
-        // Move through the approved transition and advance only from there.
-        if (currentPart?.status === "approved" && currentStep !== "approved") {
-          updateState({
-            autopilotState: {
-              ...currentAP,
-              currentStep: "approved",
-              retryAfterAt: null,
-              lastError: null,
-            },
-          });
-          return;
-        }
 
         if (currentStep === "cooldown") {
           if (retryAfterAt && Date.now() >= retryAfterAt) {
@@ -895,72 +880,15 @@ export default function App() {
           });
           await new Promise((resolve) => setTimeout(resolve, 30000));
         } else if (currentStep === "approved") {
-          const latestPart = stateRef.current.scriptParts[currentPartIndex];
-
-          // Do not advance unless the current part is really approved in state.
-          if (!latestPart || latestPart.status !== "approved") {
-            updateState({
-              autopilotState: {
-                ...stateRef.current.autopilotState,
-                currentStep: latestPart?.draftText ? "check" : "generate",
-                retryAfterAt: null,
-                lastError: `Part ${latestPart?.partNumber || currentPartIndex + 1} is not approved yet. Autopilot cannot advance.`,
-              },
-            });
-            return;
-          }
-
-          const nextIndex = currentPartIndex + 1;
-          const nextPart = stateRef.current.scriptParts[nextIndex];
-
-          // Stop only after every part is approved.
-          if (!nextPart) {
-            const allApproved = stateRef.current.scriptParts.every(
-              (p) => p.status === "approved",
-            );
-
-            updateState({
-              autopilotState: {
-                ...stateRef.current.autopilotState,
-                enabled: false,
-                currentStep: allApproved ? "approved" : "blocked",
-                currentPartIndex,
-                rateLimitAttempts: 0,
-                retryAfterAt: null,
-                lastError: allApproved ? null : "Some parts are not approved.",
-              },
-            });
-
-            setIsBatchGenerating(false);
-            if (allApproved) {
-              handleAssembleScript();
-              setWarningMessage("All script parts are approved.");
-            } else {
-              setWarningMessage(
-                "Autopilot stopped. Some parts are not approved.",
-              );
-            }
-            setTimeout(() => setWarningMessage(null), 4000);
-            return;
-          }
-
           updateState({
             autopilotState: {
-              ...stateRef.current.autopilotState,
-              currentPartIndex: nextIndex,
-              currentStep:
-                nextPart.status === "approved"
-                  ? "approved"
-                  : nextPart.draftText
-                    ? "check"
-                    : "generate",
+              ...currentAP,
+              currentStep: "generate",
+              currentPartIndex: currentPartIndex + 1,
               rateLimitAttempts: 0,
-              retryAfterAt: null,
-              lastError: null,
             },
           });
-
-          // Batch delay after approved part before moving to the next one.
+          // Batch delay after approve
           await new Promise((resolve) => setTimeout(resolve, 60000));
         }
       } catch (err: any) {
@@ -1648,11 +1576,10 @@ export default function App() {
   };
 
   const handleInitScriptParts = () => {
-    // Try to parse parts from storyPlan
     const parts: ScriptPart[] = [];
     const currentState = stateRef.current;
 
-    // Crop story plan to exclude everything from Section 13 / HIDDEN CARD TIMING MAP onwards
+    // Crop story plan to exclude everything from Section 13 / HIDDEN CARD TIMING MAP onwards.
     let planText = currentState.storyPlan || "";
     const cutOffRegex =
       /(?:\r?\n|^)\s*(?:Thirteen|13|Тринадцать|Тринадцатая)\s*[:.-—\s]\s*(?:HIDDEN\s+CARD|RESOURCE|ESCALATION|TIMING)/i;
@@ -1661,97 +1588,45 @@ export default function App() {
       planText = planText.substring(0, cutOffMatch.index);
     }
 
-    // Supporting spelled-out parts (e.g., "PART ONE", "ЧАСТЬ ОДИН", "Part 1")
-    const wordToNum: Record<string, number> = {
-      one: 1,
-      two: 2,
-      three: 3,
-      four: 4,
-      five: 5,
-      six: 6,
-      seven: 7,
-      eight: 8,
-      nine: 9,
-      ten: 10,
-      один: 1,
-      два: 2,
-      три: 3,
-      четыре: 4,
-      пять: 5,
-      шесть: 6,
-      семь: 7,
-      восемь: 8,
-      девять: 9,
-      десять: 10,
-      первая: 1,
-      вторая: 2,
-      третья: 3,
-      четвертая: 4,
-      пятая: 5,
-      шестая: 6,
-      седьмая: 7,
-      восьмая: 8,
-      девятая: 9,
-      десятая: 10,
-      i: 1,
-      ii: 2,
-      iii: 3,
-      iv: 4,
-      v: 5,
-      vi: 6,
-      vii: 7,
-      viii: 8,
-      ix: 9,
-      x: 10,
+    const matches = extractPartHeadings(planText);
+
+    const buildPartRecord = (partNumber: number, partTitle: string): ScriptPart => {
+      const sourcePartPlan = extractPartSlice(planText, partNumber);
+      const sourceSceneCards =
+        extractPartSlice(currentState.sceneCards || "", partNumber) ||
+        `Scenes for ${partTitle}`;
+
+      return {
+        partNumber,
+        partTitle,
+        sourcePartPlan,
+        sourceSceneCards,
+        // Manual Full Part Writer should feel like chat:
+        // the exact current plan and scene cards are already pasted into the request fields.
+        manualPartPlan: sourcePartPlan,
+        manualSceneCards: sourceSceneCards,
+        draftText: "",
+        status: "not_started",
+        supervisorReport: null,
+        isComplete: false,
+        wordOrCharacterCount: 0,
+        hasGenerationResidue: false,
+        hasDuplicateBlocks: false,
+        avatarCount: 0,
+      };
     };
-
-    // Robust line matcher supporting optional list prefixes
-    // Captures group 1 (part number/word) and group 2 (title)
-    const partListRegex =
-      /(?:^|\n)[^\n]*(?:Part|Часть)\s*(one|two|three|four|five|six|seven|eight|nine|ten|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять|первая|вторая|третья|четвертая|пятая|шестая|седьмая|восьмая|девятая|десятая|i|ii|iii|iv|v|vi|vii|viii|ix|x|\d+)\s*[:.-—]\s*([^\n]+)/gi;
-    let match;
-    const matches: { number: number; title: string }[] = [];
-    const seenNumbers = new Set<number>();
-
-    while ((match = partListRegex.exec(planText)) !== null) {
-      const pstr = match[1].toLowerCase();
-      const num = wordToNum[pstr] || parseInt(pstr) || 0;
-      if (num > 0) {
-        if (!seenNumbers.has(num)) {
-          seenNumbers.add(num);
-          matches.push({ number: num, title: match[2].trim() });
-        }
-      }
-    }
-
-    // Sort matches by part number to ensure correct order
-    matches.sort((a, b) => a.number - b.number);
 
     if (matches.length > 0) {
       matches.forEach((m) => {
-        parts.push({
-          partNumber: m.number,
-          partTitle: m.title,
-          sourceSceneCards:
-            extractPartSlice(currentState.sceneCards || "", m.number) ||
-            `Scenes for ${m.title}`,
-          draftText: "",
-          status: "not_started",
-          supervisorReport: null,
-          isComplete: false,
-          wordOrCharacterCount: 0,
-          hasGenerationResidue: false,
-          hasDuplicateBlocks: false,
-          avatarCount: 0,
-        });
+        parts.push(buildPartRecord(m.number, m.title));
       });
     } else {
-      // 2. Try to find explicit count: "Number of Parts: X" or "Количество частей: X"
+      // Fallback: explicit count or default 9 parts.
       const countRegex =
         /(?:Number of Parts|Количество частей|Parts|Частей)\s*[:.-]?\s*(\d+|Девять|Восемь|Семь|Шесть|Пять|Четыре|Три|Два|Один)/i;
       const countMatch = currentState.storyPlan.match(countRegex);
 
-      let numParts = 9; // default fallback if everything fails (canon is 9 parts)
+      let numParts = 9;
       if (countMatch) {
         const val = countMatch[1].toLowerCase();
         const russianMap: Record<string, number> = {
@@ -1770,21 +1645,7 @@ export default function App() {
       }
 
       for (let i = 1; i <= numParts; i++) {
-        parts.push({
-          partNumber: i,
-          partTitle: i === 1 ? "Introduction & Hook" : `Part ${i}`,
-          sourceSceneCards:
-            extractPartSlice(currentState.sceneCards || "", i) ||
-            `Scenes for Part ${i}`,
-          draftText: "",
-          status: "not_started",
-          supervisorReport: null,
-          isComplete: false,
-          wordOrCharacterCount: 0,
-          hasGenerationResidue: false,
-          hasDuplicateBlocks: false,
-          avatarCount: 0,
-        });
+        parts.push(buildPartRecord(i, i === 1 ? "Introduction & Hook" : `Part ${i}`));
       }
     }
 

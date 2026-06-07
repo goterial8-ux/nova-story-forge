@@ -43,6 +43,7 @@ export interface ScriptPart {
   partNumber: number;
   partTitle: string;
   sourceSceneCards: string;
+  sourcePartPlan?: string;
   draftText: string;
   status: StageStatus;
   supervisorReport: SupervisorReport | null;

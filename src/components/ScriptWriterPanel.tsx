@@ -11,31 +11,58 @@ import {
   Wand2,
 } from "lucide-react";
 
-const DEFAULT_STYLE_RULES = `You write a YouTube manga/manhwa recap script in English.
+const DEFAULT_STYLE_RULES = `Ты сценарист YouTube manga/manhwa recap.
 
-Sentence rules:
-- Use short, direct sentences.
-- Maximum twelve words per sentence whenever possible.
-- Each paragraph must contain two to four short sentences.
-- Every normal narrator paragraph must be 120-220 characters including spaces.
-- Do not put every sentence on a separate line.
-- Do not create giant paragraphs.
+Я дам тебе Story Plan и Scene Cards. Используй их как единственный источник сценария.
 
-Recap rhythm:
-- Action.
-- Reaction.
-- Next action.
-- Result.
-- New pressure.
+Когда я прошу написать Part 1, Part 2 и так далее, ты пишешь полную часть сценария по соответствующей части плана и scene cards.
 
-Forbidden:
-- No literary prose.
-- No slow atmosphere.
-- No philosophical monologue.
-- No abstract emotional explanation.
-- No markdown.
-- No headings.
-- No notes before or after the script.
+Не придумывай новую структуру.
+Не переписывай план.
+Не сокращай часть до пересказа.
+Не объясняй, что ты делаешь.
+Выдавай только готовый текст сценария.
+
+Формат сценария:
+- Язык сценария: English.
+- Основной голос: first person от лица главного героя.
+- Третье лицо разрешено, когда нужно показать действия других персонажей, реакцию врагов, толпы, семьи, армии, правителя или событие, которое герой не видит напрямую.
+- Стиль: YouTube manga/manhwa recap.
+- Текст должен звучать как voiceover для видео.
+
+Объём:
+- Одна команда = одна полная часть.
+- Обычная длина части: 12,000-15,000 characters including spaces, если я не укажу другой диапазон.
+- Не заканчивай часть слишком рано.
+- Если ты просто перечислил события из плана, это плохо.
+- Каждую сцену раскрывай через действия, реакции, последствия и напряжение.
+
+Стиль:
+- Пиши просто, ясно, драматично и визуально.
+- Не пиши как сухой пересказ.
+- Не пиши как отчёт.
+- Не пиши как анализ.
+- Ритм: давление → действие → реакция → результат → новое давление.
+
+Абзацы:
+- Каждый обычный абзац должен быть удобным для озвучки.
+- Ориентир: 120-220 characters including spaces.
+- Один абзац обычно содержит 2-4 коротких предложения.
+- Не делай огромные абзацы.
+- Не ставь каждое короткое предложение с новой строки.
+- Абзац = один визуальный beat.
+
+Раскрытие сцен:
+- Каждую важную scene card раскрывай последовательностью beat-ов.
+- Покажи ситуацию, угрозу, что герой замечает, что герой делает, что меняется, кто реагирует, какой результат и какое новое напряжение появляется.
+- Не выкидывай важный бэкграунд из плана.
+- Если в плане есть детство, отец, бедность, долги, унижение, опыт, обучение, страх или личная травма, используй это через действие и ситуацию.
+
+Запрещено:
+- Не выводи технические слова и мусор: WRITER, STAGE, STORY, CORE, FINAL, HARD, THIS, PART.
+- Не выводи системные сообщения.
+- Не выводи китайские или служебные сообщения об остановке генерации.
+- Не меняй имена персонажей.
 
 Output only the script text.`;
 
@@ -56,55 +83,86 @@ interface ScriptWriterPanelProps {
   autopilotState?: AutopilotState;
 }
 
-function buildManualPromptPreview(part: ScriptPart): string {
-  const target = part.manualTargetChars?.trim() || "13,000-15,000 characters including spaces";
+function buildPreviousWrittenPartsPreview(parts: ScriptPart[], selectedIndex: number): string {
+  const selectedPart = parts[selectedIndex];
+  if (!selectedPart) return "None.";
+
+  const previousParts = parts
+    .filter((p) => p.partNumber < selectedPart.partNumber && p.draftText?.trim())
+    .sort((a, b) => a.partNumber - b.partNumber);
+
+  if (previousParts.length === 0) {
+    return "None. This is the first written part.";
+  }
+
+  return previousParts
+    .map((p) => {
+      const paragraphs = (p.draftText || "")
+        .split(/\n+/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const opening = paragraphs.slice(0, 2).join(" ").slice(0, 450) || "Not available.";
+      const ending = paragraphs.slice(-3).join(" ").slice(0, 900) || "Not available.";
+
+      return [
+        `Part ${p.partNumber}: ${p.partTitle}`,
+        `Status: ${p.status}`,
+        `Opening context: ${opening}`,
+        `Latest ending / continuity state: ${ending}`,
+      ].join("\n");
+    })
+    .join("\n\n---\n\n");
+}
+
+function buildManualPromptPreview(parts: ScriptPart[], selectedIndex: number): string {
+  const part = parts[selectedIndex];
+  if (!part) return "";
+
+  const target = part.manualTargetChars?.trim() || "12,000-15,000 characters including spaces";
   const styleRules = part.manualStyleRules?.trim() || DEFAULT_STYLE_RULES;
-  const partPlan = part.manualPartPlan?.trim() || "[PASTE CURRENT PART PLAN HERE]";
+  const partPlan =
+    part.manualPartPlan?.trim() ||
+    part.sourcePartPlan?.trim() ||
+    "[CURRENT PART PLAN IS EMPTY]";
   const sceneCards =
     part.manualSceneCards?.trim() ||
     part.sourceSceneCards?.trim() ||
-    "[PASTE CURRENT PART SCENE CARDS HERE]";
+    "[CURRENT PART SCENE CARDS ARE EMPTY]";
+  const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
   const extra = part.manualExtraInstruction?.trim() || "No extra instruction.";
 
-  return `=== MANUAL FULL PART WRITER ===
+  return `Ты сценарист YouTube manga/manhwa recap.
 
-You are writing ONE COMPLETE SCRIPT PART.
+Пиши только выбранную часть сценария.
 
-Write only:
+Часть:
 Part ${part.partNumber} — ${part.partTitle}
 
-Target length:
+Объём:
 ${target}
 
-Hard output rules:
-- Write the complete Part ${part.partNumber}, not a summary.
-- Do not continue to Part ${part.partNumber + 1}.
-- Do not write headings like "Part ${part.partNumber}" or "Scene Card".
-- Do not write notes, explanations, markdown, QA reports, or meta text.
-- Output only the script text.
-- Every normal narrator paragraph must be 120-220 characters including spaces.
-- Each paragraph must contain 2-4 short sentences.
-- Do not create one-sentence micro-paragraphs unless it is dialogue, impact, system, or cliffhanger.
-- Do not create long blocks above 220 characters.
-
-=== CURRENT PART PLAN PASTED BY USER ===
+=== CURRENT PART PLAN ===
 ${partPlan}
 
-=== CURRENT PART SCENE CARDS PASTED BY USER ===
+=== CURRENT PART SCENE CARDS ===
 ${sceneCards}
 
-=== USER STYLE RULES ===
+=== PREVIOUS WRITTEN PARTS CONTEXT ===
+${previousPartsContext}
+
+Используй предыдущие части только как память о том, что уже произошло. Не переписывай их в ответе.
+
+=== STYLE RULES ===
 ${styleRules}
 
-=== EXTRA USER INSTRUCTION ===
+=== EXTRA INSTRUCTION ===
 ${extra}
 
-=== FINAL COMMAND ===
-Write the full Part ${part.partNumber} now.
-Use only the pasted current part plan and current part scene cards.
-Follow the style rules strictly.
-Target ${target}.
-Output only the script text.`;
+Команда:
+Напиши полную Part ${part.partNumber}.
+Используй Current Part Plan и Current Part Scene Cards как основу.
+Соблюдай стиль и объём.
+Выдай только готовый текст сценария на English.`;
 }
 
 function downloadText(filename: string, text: string) {
@@ -161,10 +219,11 @@ export function ScriptWriterPanel({
   const writtenParts = parts.filter((p) => p.draftText?.trim()).length;
   const approvedParts = parts.filter((p) => p.status === "approved").length;
   const allApproved = parts.length > 0 && parts.every((p) => p.status === "approved");
-  const promptPreview = buildManualPromptPreview(part);
+  const promptPreview = buildManualPromptPreview(parts, selectedIndex);
+  const manualPartPlanValue = part.manualPartPlan ?? part.sourcePartPlan ?? "";
   const manualSceneCardsValue = part.manualSceneCards ?? part.sourceSceneCards ?? "";
   const manualStyleValue = part.manualStyleRules ?? DEFAULT_STYLE_RULES;
-  const manualTargetValue = part.manualTargetChars ?? "13,000-15,000 characters including spaces";
+  const manualTargetValue = part.manualTargetChars ?? "12,000-15,000 characters including spaces";
 
   const copyPrompt = async () => {
     await navigator.clipboard.writeText(promptPreview);
@@ -182,6 +241,8 @@ export function ScriptWriterPanel({
     .filter((p) => p.draftText?.trim())
     .map((p) => `## Part ${p.partNumber}: ${p.partTitle}\n\n${p.draftText.trim()}`)
     .join("\n\n\n");
+
+  const previousPartsContext = buildPreviousWrittenPartsPreview(parts, selectedIndex);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col gap-4 mt-4">
@@ -302,6 +363,19 @@ export function ScriptWriterPanel({
 
               <div className="flex items-center gap-2 flex-wrap">
                 <button
+                  onClick={() =>
+                    updatePart(selectedIndex, {
+                      manualPartPlan: part.sourcePartPlan || "",
+                      manualSceneCards: part.sourceSceneCards || "",
+                    })
+                  }
+                  disabled={stageStatus === "locked"}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 disabled:opacity-40"
+                >
+                  <RefreshCw className="w-3 h-3" /> Refill Context
+                </button>
+
+                <button
                   onClick={copyPrompt}
                   className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200"
                 >
@@ -328,26 +402,46 @@ export function ScriptWriterPanel({
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
-                  Current Part Plan — paste manually
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                    Current Part Plan — auto-filled, editable
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updatePart(selectedIndex, { manualPartPlan: part.sourcePartPlan || "" })}
+                    disabled={stageStatus === "locked" || !part.sourcePartPlan}
+                    className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-500 disabled:opacity-40"
+                  >
+                    Refill from Plan
+                  </button>
+                </div>
                 <textarea
-                  value={part.manualPartPlan || ""}
+                  value={manualPartPlanValue}
                   onChange={(e) => updatePart(selectedIndex, { manualPartPlan: e.target.value })}
-                  placeholder="Paste only the current part plan here. Example: PART FIVE — ГОРОД НАЧИНАЕТ ДВИГАТЬСЯ..."
+                  placeholder="This should auto-fill from Story Plan. You can still edit it manually."
                   className="h-56 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
                   disabled={stageStatus === "locked"}
                 />
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
-                  Current Part Scene Cards — paste manually
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                    Current Part Scene Cards — auto-filled, editable
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updatePart(selectedIndex, { manualSceneCards: part.sourceSceneCards || "" })}
+                    disabled={stageStatus === "locked" || !part.sourceSceneCards}
+                    className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-500 disabled:opacity-40"
+                  >
+                    Refill from Cards
+                  </button>
+                </div>
                 <textarea
                   value={manualSceneCardsValue}
                   onChange={(e) => updatePart(selectedIndex, { manualSceneCards: e.target.value })}
-                  placeholder="Paste only scene cards for this part here."
+                  placeholder="This should auto-fill from Scene Cards. You can still edit it manually."
                   className="h-56 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
                   disabled={stageStatus === "locked"}
                 />
@@ -387,13 +481,31 @@ export function ScriptWriterPanel({
                   <textarea
                     value={part.manualExtraInstruction || ""}
                     onChange={(e) => updatePart(selectedIndex, { manualExtraInstruction: e.target.value })}
-                    placeholder="Example: write more comedy in the turtle movement scene; do not mention future Part 6..."
+                    placeholder="Example: stronger opening, more pressure in the family scene, more comedy in the turtle movement scene..."
                     className="flex-1 min-h-28 resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
                     disabled={stageStatus === "locked"}
                   />
                 </label>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+                  Previous written parts context
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Auto-included in the prompt for continuity. It uses earlier written parts only.
+                </div>
+              </div>
+            </div>
+            <textarea
+              readOnly
+              value={previousPartsContext}
+              className="min-h-[180px] resize-y border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed focus:outline-none rounded-sm"
+            />
           </div>
 
           <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-4 flex flex-col gap-3">
@@ -446,6 +558,43 @@ export function ScriptWriterPanel({
               placeholder="Generated full part will appear here. You can also paste a manually generated part here."
               className="min-h-[420px] resize-y border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200 rounded-sm"
               disabled={stageStatus === "locked"}
+            />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+                  Full written script preview
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Shows every written part immediately. Approval is not required for preview.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigator.clipboard.writeText(fullScript)}
+                  disabled={!fullScript}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 disabled:opacity-40"
+                >
+                  <Clipboard className="w-3 h-3" /> Copy Full Preview
+                </button>
+                <button
+                  onClick={() => downloadText(`manual_full_script_preview_${Date.now()}.txt`, fullScript)}
+                  disabled={!fullScript}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-all border border-slate-200 disabled:opacity-40"
+                >
+                  <Download className="w-3 h-3" /> Download Preview
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              readOnly
+              value={fullScript}
+              placeholder="Written parts will appear here immediately, even before approval."
+              className="min-h-[320px] resize-y border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed focus:outline-none rounded-sm"
             />
           </div>
 
