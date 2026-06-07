@@ -894,6 +894,7 @@ function fixKnownMixedAlphabetArtifacts(text: string): string {
 }
 
 const NAME_STOPWORDS = new Set([
+  "Main", "Show", "Ready", "Hook", "PART", "WRITER", "STYLE", "Card", "Face", "Exit",
   "Action", "After", "Again", "All", "And", "Anchor", "Approved", "Before",
   "Cards", "Character", "Characters", "Chapter", "Claude", "Clean", "Contract",
   "Current", "English", "Every", "Final", "Forbidden", "From", "Generate",

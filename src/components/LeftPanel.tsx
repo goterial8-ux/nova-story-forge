@@ -2,6 +2,82 @@ import React from 'react';
 import { ProjectState } from '../types';
 import { Settings, FileText, Anchor, Save, Download, Upload, Server, RefreshCw } from 'lucide-react';
 
+
+const CHARACTER_NAME_STOPWORDS = new Set([
+  "About", "Action", "After", "Again", "All", "And", "Antagonist", "Approved",
+  "Before", "Character", "Characters", "Chapter", "Contract", "Current",
+  "English", "Engine", "Final", "First", "Forbidden", "From", "Genre", "Global",
+  "Hook", "Idea", "Input", "Language", "Main", "Name", "Names", "Output",
+  "Part", "Plan", "Power", "Project", "Raw", "Ready", "Role", "Scene", "Script",
+  "Show", "Stage", "Story", "Style", "The", "This", "Title", "Writer", "Writing",
+  "PART", "WRITER", "STYLE", "CARD", "Card", "Face", "Exit"
+]);
+
+function addCandidateName(map: Map<string, number>, rawName: string) {
+  const cleaned = rawName
+    .replace(/[`*_#>\[\](){}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return;
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 3) return;
+
+  const normalized = words
+    .filter((word) => /^[A-Z][A-Za-z'-]{1,24}$/.test(word))
+    .join(" ")
+    .trim();
+
+  if (!normalized) return;
+  if (normalized.split(/\s+/).some((word) => CHARACTER_NAME_STOPWORDS.has(word))) return;
+
+  map.set(normalized, (map.get(normalized) || 0) + 3);
+}
+
+function formatAutoCharacterNames(state: ProjectState): string {
+  const source = [
+    state.storyContract,
+    state.characterBible,
+    state.storyPlan,
+    state.developedIdea,
+    state.rawIdea,
+    state.projectTitle,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  if (!source.trim()) return "";
+
+  const candidates = new Map<string, number>();
+
+  const labeledPatterns = [
+    /\b(?:Name|Placeholder Name|Protagonist|Main Character|Narrator|Wife|Husband|Friend|Ally|Antagonist|Lord|Enemy|Creature|Entity)\s*(?:or Placeholder Name)?\s*[:\-]\s*([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})/gi,
+    /\b([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})\s*[,—-]\s*(?:main character|protagonist|narrator|wife|husband|antagonist|lord|ally|enemy|creature|entity)\b/gi,
+  ];
+
+  for (const pattern of labeledPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      addCandidateName(candidates, match[1]);
+    }
+  }
+
+  for (const match of source.matchAll(/\b[A-Z][A-Za-z'-]{2,24}(?:\s+[A-Z][A-Za-z'-]{2,24}){0,2}\b/g)) {
+    addCandidateName(candidates, match[0]);
+  }
+
+  const sorted = Array.from(candidates.entries())
+    .filter(([name, score]) => score >= 2 && !/^(Part|Chapter|Story|Scene|Stage)\b/i.test(name))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([name]) => `- ${name}: auto-detected project character/entity`);
+
+  if (sorted.length === 0) return "";
+
+  return ["LOCKED CHARACTER NAMES:", ...sorted].join("\n");
+}
+
+
 interface LeftPanelProps {
   state: ProjectState;
   updateState: (partial: Partial<ProjectState>) => void;
@@ -12,6 +88,24 @@ interface LeftPanelProps {
 }
 
 export function LeftPanel({ state, updateState, onResetProject, saveStatus, onLoadBuiltInReferences, isLoadingReferences }: LeftPanelProps) {
+  const autoDetectedCharacterNames = React.useMemo(
+    () => formatAutoCharacterNames(state),
+    [
+      state.storyContract,
+      state.characterBible,
+      state.storyPlan,
+      state.developedIdea,
+      state.rawIdea,
+      state.projectTitle,
+    ],
+  );
+
+  React.useEffect(() => {
+    if (!String(state.characterNames || "").trim() && autoDetectedCharacterNames.trim()) {
+      updateState({ characterNames: autoDetectedCharacterNames });
+    }
+  }, [autoDetectedCharacterNames, state.characterNames, updateState]);
+
   
   return (
     <aside className="w-[280px] h-full border-r border-slate-200 bg-white flex flex-col pt-4 overflow-hidden shrink-0">
@@ -120,6 +214,22 @@ export function LeftPanel({ state, updateState, onResetProject, saveStatus, onLo
             onChange={e => updateState({ forbiddenElements: e.target.value })}
             placeholder="No magic, no time travel..."
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between">
+            Locked Character Names
+            <span className="text-[10px] text-slate-400 font-normal">Auto-filled</span>
+          </label>
+          <textarea
+            className="bg-white border border-slate-200 rounded-[2px] px-3 py-2 text-[12px] text-slate-900 focus:outline-none focus:border-blue-500 min-h-28 resize-y leading-relaxed"
+            value={state.characterNames || autoDetectedCharacterNames}
+            onChange={e => updateState({ characterNames: e.target.value })}
+            placeholder={"LOCKED CHARACTER NAMES:\n- Character Name: role / description"}
+          />
+          <p className="text-[10px] text-slate-400 leading-normal">
+            Auto-filled from Story DNA / Story Plan when empty. Edit manually only if the detection is wrong.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">

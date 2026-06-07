@@ -67,40 +67,94 @@ Plan expansion:
 - If the plan mentions childhood, father, mother, family, poverty, debt, humiliation, training, fear, old wounds, personal failure, or past lessons, use it through action and situation.
 
 Clean output rule:
+- Use only the locked character names from this project.
+- Do not replace character names with role labels, prompt labels, stage labels, or generic control words.
 - Do not output broken placeholder words or prompt residue.
-- These words are allowed only when they naturally belong to the sentence: main, show, one, style, card, face, hook, exit.
-- Never use them as broken placeholders, character-name replacements, uppercase residue, or random standalone fragments.
-
-Bad examples:
-Main turned around.
-Show looked at me.
-ONE string.
-STYLE breathing too fast.
-Card, clean water.
-Leave. Now. Face.
-Hook the deer shifted routes.
-Exit spirits.
-
-Good examples:
-Mio turned around.
-She looked at me.
-One string hung loose from the bow.
-I was breathing too fast.
-The water was clean.
-I had to leave now.
-The deer shifted routes before a storm.
-The old path led toward the exit.
-
-Before sending the final script, silently scan the whole output.
-If Main appears as a character name, replace it with the correct locked name.
-If Show appears instead of she/her, rewrite the sentence.
-If ONE, STYLE, Card, Face, Hook, or Exit appears as residue, rewrite that sentence naturally.
-
-Do not output system messages.
-Do not output provider error messages.
-Do not output Chinese termination messages.
-Do not change character names.
+- Before sending the final script, silently scan the whole output and rewrite any sentence where a character name was replaced by a label.
+- Do not output system messages.
+- Do not output provider error messages.
+- Do not output Chinese termination messages.
+- Do not change character names.
 Output only clean script text.`;
+
+
+const CHARACTER_NAME_STOPWORDS = new Set([
+  "About", "Action", "After", "Again", "All", "And", "Antagonist", "Approved",
+  "Before", "Character", "Characters", "Chapter", "Contract", "Current",
+  "English", "Engine", "Final", "First", "Forbidden", "From", "Genre", "Global",
+  "Hook", "Idea", "Input", "Language", "Main", "Name", "Names", "Output",
+  "Part", "Plan", "Power", "Project", "Raw", "Ready", "Role", "Scene", "Script",
+  "Show", "Stage", "Story", "Style", "The", "This", "Title", "Writer", "Writing",
+  "PART", "WRITER", "STYLE", "CARD", "Card", "Face", "Exit"
+]);
+
+function addCharacterNameCandidate(map: Map<string, number>, rawName: string) {
+  const cleaned = String(rawName || "")
+    .replace(/[`*_#>\\[\\](){}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return;
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 3) return;
+
+  const normalized = words
+    .filter((word) => /^[A-Z][A-Za-z'-]{1,24}$/.test(word))
+    .join(" ")
+    .trim();
+
+  if (!normalized) return;
+  if (normalized.split(/\s+/).some((word) => CHARACTER_NAME_STOPWORDS.has(word))) return;
+
+  map.set(normalized, (map.get(normalized) || 0) + 3);
+}
+
+function buildCharacterNamesLock(state: ProjectState): string {
+  const manual = String((state as any).characterNames || "").trim();
+  if (manual) return manual;
+
+  const source = [
+    state.storyContract,
+    (state as any).characterBible,
+    state.storyPlan,
+    state.developedIdea,
+    state.rawIdea,
+    state.projectTitle,
+  ]
+    .filter(Boolean)
+    .join("\\n\\n");
+
+  if (!source.trim()) return "No locked names detected yet. Use exact names from the current project context.";
+
+  const candidates = new Map<string, number>();
+
+  const labeledPatterns = [
+    /\b(?:Name|Placeholder Name|Protagonist|Main Character|Narrator|Wife|Husband|Friend|Ally|Antagonist|Lord|Enemy|Creature|Entity)\s*(?:or Placeholder Name)?\s*[:\\-]\s*([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})/gi,
+    /\b([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2})\s*[,—-]\s*(?:main character|protagonist|narrator|wife|husband|antagonist|lord|ally|enemy|creature|entity)\b/gi,
+  ];
+
+  for (const pattern of labeledPatterns) {
+    for (const match of source.matchAll(pattern)) {
+      addCharacterNameCandidate(candidates, match[1]);
+    }
+  }
+
+  for (const match of source.matchAll(/\b[A-Z][A-Za-z'-]{2,24}(?:\s+[A-Z][A-Za-z'-]{2,24}){0,2}\b/g)) {
+    addCharacterNameCandidate(candidates, match[0]);
+  }
+
+  const names = Array.from(candidates.entries())
+    .filter(([name, score]) => score >= 2 && !/^(Part|Chapter|Story|Scene|Stage)\b/i.test(name))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([name]) => `- ${name}: auto-detected project character/entity`);
+
+  if (names.length === 0) return "No locked names detected yet. Use exact names from the current project context.";
+
+  return ["LOCKED CHARACTER NAMES:", ...names].join("\\n");
+}
+
 
 function safe(value: unknown, fallback = "None"): string {
   const text = String(value ?? "").trim();
@@ -116,6 +170,7 @@ function fillTemplate(template: string, state: ProjectState): string {
     .replaceAll("{{OUTPUT_LANGUAGE}}", "Russian")
     .replaceAll("{{TARGET_LENGTH}}", safe(state.targetLength))
     .replaceAll("{{STYLE_NOTES}}", safe(state.styleNotes))
+    .replaceAll("{{CHARACTER_NAMES}}", buildCharacterNamesLock(state))
     .replaceAll("{{FORBIDDEN_ELEMENTS}}", safe(state.forbiddenElements))
     .replaceAll("{{COMPETITOR_STYLE_NOTES}}", safe(state.competitors))
     .replaceAll("{{COMPETITOR_REFERENCE_EXAMPLES}}", clipForWriter(state.competitors || "None", 18000))
@@ -313,6 +368,7 @@ export function buildPartPrompt(partNumber: number, state: ProjectState): string
   const manualExtraInstruction = String((part as any)?.manualExtraInstruction || "").trim();
   const manualTargetChars = String((part as any)?.manualTargetChars || "12,000-15,000 characters including spaces").trim();
   const previousContext = previousWrittenPartsContext(partNumber, state);
+  const characterNamesLock = buildCharacterNamesLock(state);
   const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
   const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
 

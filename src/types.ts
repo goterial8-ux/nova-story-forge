@@ -135,6 +135,7 @@ export interface ProjectState {
   styleDna: string;
   forbiddenElements: string;
   styleNotes: string;
+  characterNames: string;
   rawIdea: string;
 
   developedIdea: string;
@@ -7615,6 +7616,7 @@ export const INITIAL_STATE: ProjectState = {
 - "Я протащил ржавую балку на свет. Она была тяжелой, но точка опоры была очевидной."`,
   forbiddenElements: '',
   styleNotes: '',
+  characterNames: "",
   rawIdea: '',
 
   developedIdea: '',
