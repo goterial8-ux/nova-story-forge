@@ -114,75 +114,63 @@ const SCRIPT_WRITER_RUNTIME_CORE = `
 === FINAL RUNTIME WRITER CORE ===
 This is the last and strongest instruction for Script Writer.
 
-Write the current part as an English first-person manga/manhwa recap script.
-Use the approved Story Plan and current Scene Cards as the source of truth.
+Write the current part as an English manga/manhwa recap script.
+Use the approved Story Plan and Current Part Plan as the only source of truth.
+Scene Cards are disabled. Do not ask for Scene Cards. Do not mention Scene Cards.
 Treat the response as the exact body of a plain .txt file for the current script part.
 Do not describe the file, do not provide a filename, do not wrap the answer in a code block, and do not write any explanation before or after the script text.
-Do not fight the prompt with old formatting police rules. Paragraph length is a writing target, not a reason to explain or self-report.
 
 Paragraph and part length reminder:
-- every normal narrator paragraph must be 120-220 characters including spaces;
+- every normal narrator paragraph should target 120-220 characters including spaces;
 - 120-220 characters is usually about 22-40 English words;
 - the best target is 26-34 words per paragraph, around 150-190 characters.
 
 Hard length lock:
-- for a nine-part script targeting 120,000-130,000 total characters, each part must be 12,500-14,500 characters including spaces;
+- for a nine-part script targeting 120,000-130,000 total characters, each part should be 12,500-14,500 characters including spaces;
 - absolute maximum per part: 15,000 characters including spaces;
 - never exceed 15,000 characters for one part;
 - when the current part reaches about 14,000 characters, finish the active beat and stop;
-- do not continue just because scene cards contain more details;
+- do not continue beyond the current part plan;
 - do not expand previous recap into new narration;
-- do not become literary to increase length;
-- compress events into short recap beats instead;
+- do not become decorative or literary just to increase length;
 - do not stop too early, but never exceed the hard maximum for the current part.
 
-Paragraph size lock:
-- every normal narrator paragraph must be 120-220 characters including spaces;
-- aim for 150-190 characters for most paragraphs;
-- shorter lines are allowed only for dialogue, system notifications, impact lines, or cliffhanger beats;
-- never create long literary blocks;
-- if a paragraph goes above 220 characters, split it into two visual beats;
-- if a paragraph is below 120 characters, merge it with the next action or reaction unless it is dialogue or impact.
-
-Hard recap style:
-- maximum twelve words per sentence whenever possible;
+Recap style:
 - action must be followed by reaction;
-- write in simple first-person voiceover;
-- do not write like a novel, report, science explainer, or literary monologue;
-- every scene must show a visible problem, practical action, concrete result, reaction, and new pressure.
+- write in simple voiceover prose;
+- use first person for the protagonist's direct experience;
+- use third person only when outside visibility is needed;
+- do not write like a report, science explainer, or literary monologue;
+- every major planned beat must show a visible problem, practical action, concrete result, reaction, and new pressure.
 
 For every part:
-- first identify the requested current part number and title from the prompt, then write only that part;
-- if the prompt says Part One, write Part One only; if it says Part Five, write Part Five only;
-- do not summarize previous parts and do not jump ahead to future parts;
-- build a private name ledger from the locked story contract, plan, and scene cards, then use exact spellings only;
+- identify the requested current part number and title from the prompt, then write only that part;
+- follow the Current Part Plan in order;
+- build a private name ledger from the story contract and current part plan, then use exact spellings only;
 - never rename characters, places, organizations, tools, foods, debts, guilds, or antagonists mid-script;
-- preserve the first-person competitor-style rhythm: fast, direct, visual, practical, and emotionally pressured;
-- follow the current part scene cards in order;
-- write from inside the protagonist's head using I / my / we naturally;
-- use competitor references only for rhythm and delivery, never for plot;
+- preserve the first-person manga/manhwa recap rhythm: direct, visual, practical, and emotionally pressured;
 - make each beat visual: problem, detail noticed, action, consequence, reaction, payoff, new pressure;
-- keep practical survival/progression logic clear without sounding like a science lesson;
 - make allies useful and enemies reactive, not stupid;
 - include micro-turns: cost, failed attempt, doubt, enemy adaptation, resource loss, public reaction, or a new problem;
 - end with a payoff or a forward hook.
 
 Before writing, silently check:
-1. current part plan slice;
-2. current part scene cards only;
-3. exact name ledger from the story contract;
-4. previous continuity summary;
-5. paragraph size lock;
-6. hard length maximum;
-7. first-person manga/manhwa recap voice.
+1. current part plan only;
+2. exact name ledger from the story contract and current plan;
+3. previous continuity summary;
+4. voice anchor and last previous line if provided;
+5. plan beat anchors if provided;
+6. paragraph rhythm;
+7. hard length maximum;
+8. manga/manhwa recap voice.
 
 Forbidden output:
 - no analysis, checklist, QA report, markdown table, bullet list, scene labels, or debug notes;
 - no academic/clinical/technical report tone;
 - no generic "little did I know" or empty destiny prose;
-- no copying reference plots, names, scenes, powers, or twists.
+- no copying reference plots, names, scenes, powers, or twists;
 - no Cyrillic words, mixed Cyrillic/Latin words, broken foreign words, or accidental untranslated words inside English script paragraphs;
-- no one-line fragment paragraphs under 120 characters; merge short punch lines with adjacent action or reaction unless it is a part heading.
+- no broken placeholder residue such as Main, Show, ONE, STYLE, Card, Face, Hook, or Exit used incorrectly.
 
 Output only the plain .txt file body for this current part.
 `;
@@ -195,7 +183,7 @@ function localSupervisorPassReport(stageId: string): SupervisorReport {
     problems: [],
     requiredFixes: [],
     recommendation:
-      "Local pass. Only Story Plan and Scene Cards are blocking quality gates.",
+      "Local pass. Only Story Plan is the blocking quality gate for the plan-only Script Writer workflow.",
     canContinue: true,
   };
 }
@@ -563,28 +551,70 @@ function compactClaudePrompt(prompt: string): string {
     return prompt;
   }
 
-  const liteSections = [
+  const modernSections = [
     clipPromptSection(
-      extractPromptSection(prompt, "### 1. LOCKED STORY CONTRACT", [
-        "### 2. CURRENT PART PLAN SLICE ONLY",
-      ]),
-      2500,
+      extractPromptSection(prompt, "Part:", ["Target length:"]),
+      700,
     ),
     clipPromptSection(
-      extractPromptSection(prompt, "### 2. CURRENT PART PLAN SLICE ONLY", [
-        "### 3. CURRENT PART TITLE & PURPOSE",
-      ]),
-      3500,
+      extractPromptSection(prompt, "Target length:", ["=== CURRENT PART PLAN ==="]),
+      300,
     ),
     clipPromptSection(
-      extractPromptSection(prompt, "### 3. CURRENT PART TITLE & PURPOSE", [
-        "### 4. CURRENT PART SCENE CARDS ONLY",
+      extractPromptSection(prompt, "=== CURRENT PART PLAN ===", [
+        "=== PREVIOUS WRITTEN PARTS CONTEXT ===",
+      ]),
+      6200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== PREVIOUS WRITTEN PARTS CONTEXT ===", [
+        "VOICE ANCHOR",
+        "=== PLAN BEAT ANCHORS ===",
+        "=== STYLE RULES ===",
+      ]),
+      1700,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "VOICE ANCHOR", [
+        "=== PLAN BEAT ANCHORS ===",
+        "=== STYLE RULES ===",
+      ]),
+      1100,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== PLAN BEAT ANCHORS ===", [
+        "=== STYLE RULES ===",
+      ]),
+      2400,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== STYLE RULES ===", [
+        "=== EXTRA INSTRUCTION ===",
+      ]),
+      5200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== EXTRA INSTRUCTION ===", [
+        "Command:",
       ]),
       1200,
     ),
     clipPromptSection(
-      extractPromptSection(prompt, "### 4. CURRENT PART SCENE CARDS ONLY", [
-        "### 5. PREVIOUS APPROVED PARTS RECAP",
+      extractPromptSection(prompt, "Command:", [
+        "=== FINAL RUNTIME WRITER CORE ===",
+      ]),
+      900,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== FINAL RUNTIME WRITER CORE ===", []),
+      4200,
+    ),
+  ].filter((section) => section.trim().length > 0);
+
+  const legacySections = [
+    clipPromptSection(
+      extractPromptSection(prompt, "### 2. CURRENT PART PLAN SLICE ONLY", [
+        "### 3. CURRENT PART TITLE & PURPOSE",
       ]),
       4500,
     ),
@@ -595,65 +625,28 @@ function compactClaudePrompt(prompt: string): string {
       1000,
     ),
     clipPromptSection(
-      extractPromptSection(prompt, "### 6. STYLE DNA", [
-        "### 7. SHAPED VOICE STYLE SAMPLE",
-      ]),
-      800,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "### 7. SHAPED VOICE STYLE SAMPLE", [
-        "### 8. HARD RECAP STYLE LOCK",
-      ]),
-      600,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "### 8. HARD RECAP STYLE LOCK", [
-        "### 9. SCRIPT FORMATTING CONTRACT",
-      ]),
-      1800,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "### 9. SCRIPT FORMATTING CONTRACT", [
-        "### 10. PART WRITING PREFLIGHT LOCK",
-      ]),
-      1200,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "### 10. PART WRITING PREFLIGHT LOCK", [
-        "### 11. MINIMAL HARD RULES",
-      ]),
-      1600,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "### 11. MINIMAL HARD RULES", [
-        "=== CURRENT PART ANCHOR ===",
-      ]),
-      800,
-    ),
-    clipPromptSection(
-      extractPromptSection(prompt, "=== CURRENT PART ANCHOR ===", [
-        "=== FINAL RUNTIME WRITER CORE ===",
-      ]),
-      2500,
-    ),
-    clipPromptSection(
       extractPromptSection(prompt, "=== FINAL RUNTIME WRITER CORE ===", []),
-      3500,
+      4200,
     ),
   ].filter((section) => section.trim().length > 0);
 
-  const structuredCompacted = liteSections.join(
-    "\n\n[...LONG CONTEXT REMOVED TO STAY UNDER ANTHROPIC TPM LIMITS...]\n\n",
+  const selectedSections = modernSections.length >= 3 ? modernSections : legacySections;
+  const structuredCompacted = selectedSections.join(
+    "
+
+[...LONG CONTEXT REMOVED TO STAY UNDER PROVIDER INPUT LIMITS...]
+
+",
   );
 
   const compacted =
     structuredCompacted.length > 0 && structuredCompacted.length <= safeMaxChars
       ? structuredCompacted
-      : `${prompt.slice(0, Math.floor(safeMaxChars * 0.36))}
+      : `${prompt.slice(0, Math.floor(safeMaxChars * 0.42))}
 
-[...SERVER-SIDE PROMPT COMPACTION: long reference/history sections were removed to stay under Anthropic TPM limits. Preserve current part, locked plan, scene cards, and runtime writer core...]
+[...SERVER-SIDE PROMPT COMPACTION: long context was removed. Preserve Current Part Plan, Style Rules, Plan Beat Anchors, Voice Anchor, and Runtime Writer Core...]
 
-${prompt.slice(-Math.floor(safeMaxChars * 0.58))}`;
+${prompt.slice(-Math.floor(safeMaxChars * 0.54))}`;
 
   console.warn(
     `[Anthropic] Prompt compacted from ${prompt.length} to ${compacted.length} characters.`,
