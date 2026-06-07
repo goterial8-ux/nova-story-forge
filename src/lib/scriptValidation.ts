@@ -28,7 +28,7 @@ export interface ScriptValidationResult {
 export const SCRIPT_PARAGRAPH_MIN = 120;
 export const SCRIPT_PARAGRAPH_MAX = 220;
 export const SCRIPT_PARAGRAPH_HARD_MIN = 100;
-export const SCRIPT_PARAGRAPH_HARD_MAX = 235;
+export const SCRIPT_PARAGRAPH_HARD_MAX = 260;
 
 const AVATAR_PATTERN =
   /^\s*(?:\[(?:AVATAR|COMMENTARY|HOST|NARRATOR)\]|(?:AVATAR|COMMENTARY|HOST)\s*:)/i;
@@ -103,6 +103,9 @@ export function validateScriptText(
   let firstPersonParagraphCount = 0;
   let hasGenerationResidue = false;
   let hasDuplicateBlocks = false;
+  let tooShortCount = 0;
+  let tooLongCount = 0;
+  let seriousLongCount = 0;
 
   if (!text || !text.trim()) {
     issues.push({
@@ -138,6 +141,15 @@ export function validateScriptText(
 
     if (!isAvatar) {
       const length = paragraph.length;
+      if (length < SCRIPT_PARAGRAPH_MIN) {
+        tooShortCount += 1;
+      }
+      if (length > SCRIPT_PARAGRAPH_MAX) {
+        tooLongCount += 1;
+      }
+      if (length > SCRIPT_PARAGRAPH_HARD_MAX) {
+        seriousLongCount += 1;
+      }
       if (length < SCRIPT_PARAGRAPH_MIN || length > SCRIPT_PARAGRAPH_MAX) {
         issues.push({
           severity: "warn",
@@ -167,6 +179,35 @@ export function validateScriptText(
       }
     }
   });
+
+  if (normalParagraphCount > 0) {
+    if (tooShortCount > normalParagraphCount * 0.35) {
+      issues.push({
+        severity: "warn",
+        code: "many_short_paragraphs_warning",
+        message: `${tooShortCount} of ${normalParagraphCount} narrator paragraphs are shorter than ${SCRIPT_PARAGRAPH_MIN} characters. This is a style warning, not an approval blocker.`,
+      });
+    }
+
+    if (tooLongCount > normalParagraphCount * 0.25) {
+      issues.push({
+        severity: "warn",
+        code: "many_long_paragraphs_warning",
+        message: `${tooLongCount} of ${normalParagraphCount} narrator paragraphs exceed ${SCRIPT_PARAGRAPH_MAX} characters. Clean Export can tighten this later.`,
+      });
+    }
+
+    if (
+      seriousLongCount >= 3 ||
+      seriousLongCount > normalParagraphCount * 0.1
+    ) {
+      issues.push({
+        severity: "warn",
+        code: "serious_long_paragraphs_warning",
+        message: `${seriousLongCount} narrator paragraphs exceed ${SCRIPT_PARAGRAPH_HARD_MAX} characters. Consider a polish pass after script generation.`,
+      });
+    }
+  }
 
   const failures = issues.filter((issue) => issue.severity === "fail");
   const warnings = issues.filter((issue) => issue.severity === "warn");

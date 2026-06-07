@@ -21,6 +21,51 @@ import {
   validateScriptText,
   validationIssueSummary,
 } from "./lib/scriptValidation";
+import { extractPartSlice } from "./lib/partUtils";
+
+function softenSceneCardsSupervisorReport(
+  report: SupervisorReport,
+  localOk: boolean,
+): SupervisorReport {
+  if (!localOk) return report;
+
+  const reportText = JSON.stringify([
+    report?.problems || [],
+    report?.requiredFixes || [],
+    report?.recommendation || "",
+  ]).toLowerCase();
+  const hardBlockers = [
+    "genre drift",
+    "story drift",
+    "wrong premise",
+    "wrong world",
+    "unrelated",
+    "contradicts",
+    "clearly incomplete",
+    "output is incomplete",
+    "unfinished fragment",
+    "truncated",
+    "no scene cards",
+    "does not follow the story plan",
+  ];
+
+  if (hardBlockers.some((marker) => reportText.includes(marker))) {
+    return report;
+  }
+
+  return {
+    ...report,
+    status: "ok",
+    whatIsGood:
+      report.whatIsGood ||
+      "Scene cards are usable for script writing and passed local structure checks.",
+    problems: [],
+    requiredFixes: [],
+    recommendation:
+      "Scene cards passed. Field labels such as scale, what must be shown, and continuity details are helpful but not blocking.",
+    canContinue: true,
+  };
+}
 
 function getScriptPartValidationPatch(draftText: string, isClaudeLite?: boolean): Partial<ScriptPart> {
   const normalizedDraftText = normalizeScriptDraft(draftText);
@@ -112,14 +157,14 @@ export default function App() {
               "Скучно/уныло?",
             ) ||
             !parsed.promptRegistry.aiSupervisorPrompt.includes(
-              "adjective soup",
-            ) ||
-            !parsed.promptRegistry.aiSupervisorPrompt.includes(
               "detached robot",
             ) ||
             !parsed.promptRegistry.aiSupervisorPrompt.includes("lazy") ||
             !parsed.promptRegistry.aiSupervisorPrompt.includes("Raw Idea") ||
-            !parsed.promptRegistry.aiSupervisorPrompt.includes("TEXTBOOK TRAP")
+            !parsed.promptRegistry.aiSupervisorPrompt.includes("TEXTBOOK TRAP") ||
+            !parsed.promptRegistry.aiSupervisorPrompt.includes(
+              "SCENE CARDS SOFT FIELD RULE",
+            )
           ) {
             parsed.promptRegistry.aiSupervisorPrompt =
               INITIAL_STATE.promptRegistry.aiSupervisorPrompt;
@@ -133,7 +178,7 @@ export default function App() {
           if (
             !parsed.promptRegistry.stageFiveScriptWriterPrompt ||
             !parsed.promptRegistry.stageFiveScriptWriterPrompt.includes(
-              "ADJECTIVE DISCIPLINE",
+              "STYLE DISCIPLINE",
             ) ||
             !parsed.promptRegistry.stageFiveScriptWriterPrompt.includes(
               "АНТИ-ИМБА",
@@ -148,7 +193,7 @@ export default function App() {
               "ZERO TOLERANCE FOR FLUFF",
             ) ||
             !parsed.promptRegistry.stageFiveScriptWriterPrompt.includes(
-              "HOW TO REACH 10,000+ CHARACTERS WITHOUT FLUFF",
+              "HOW TO REACH THE REQUIRED PART LENGTH",
             ) ||
             !parsed.promptRegistry.stageFiveScriptWriterPrompt.includes(
               "TEXTBOOK",
@@ -307,6 +352,7 @@ export default function App() {
 
         // Show a temporary visual message of retrying
         const errorMessage = String(err.message || err);
+        const lowerErrorMessage = errorMessage.toLowerCase();
         let waitTime = 2000;
 
         // A transient abort is an AbortError that happened before the actual timeout period (e.g. browser tab suspended, server restarted)
@@ -316,14 +362,27 @@ export default function App() {
             errorMessage.includes("Abort")) &&
           elapsed < actualTimeoutMs - 5000;
 
+        const isConcurrencyLimit =
+          lowerErrorMessage.includes("concurrency limit") ||
+          lowerErrorMessage.includes("concurrency_limit") ||
+          lowerErrorMessage.includes("too many concurrent");
+
         if (
           errorMessage.includes("429") ||
-          errorMessage.includes("RESOURCE_EXHAUSTED")
+          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+          isConcurrencyLimit
         ) {
-          waitTime = Math.min(5000 * Math.pow(2, attempt - 1), 60000);
-          setWarningMessage(
-            `Rate limit hit. Retrying in ${waitTime / 1000}s... (Attempt ${attempt} of ${maxAttempts})`,
-          );
+          if (isConcurrencyLimit) {
+            waitTime = Math.min(120000 * attempt, 300000);
+            setWarningMessage(
+              `Provider concurrency limit hit. Retrying in ${waitTime / 1000}s... (Attempt ${attempt} of ${maxAttempts})`,
+            );
+          } else {
+            waitTime = Math.min(5000 * Math.pow(2, attempt - 1), 60000);
+            setWarningMessage(
+              `Rate limit hit. Retrying in ${waitTime / 1000}s... (Attempt ${attempt} of ${maxAttempts})`,
+            );
+          }
         } else if (!isTransientAbort || attempt > 2) {
           // Suppress visual warnings for early transient browser/server-reconnect aborts so it doesn't alarm the user
           setWarningMessage(
@@ -678,7 +737,7 @@ export default function App() {
               type: "text",
               stageId: "script_writer",
             }),
-          });
+          }, 4, 300000);
 
           const newText = normalizeScriptDraft(cleanData.text);
           const patch = getScriptPartValidationPatch(newText, stateRef.current.claudeLiteMode !== false);
@@ -724,7 +783,7 @@ export default function App() {
               type: "text",
               stageId: "script_writer",
             }),
-          });
+          }, 4, 300000);
 
           const newText = normalizeScriptDraft(repairData.text);
           const patch = getScriptPartValidationPatch(newText, stateRef.current.claudeLiteMode !== false);
@@ -778,7 +837,7 @@ export default function App() {
               type: "text",
               stageId: "script_writer",
             }),
-          });
+          }, 4, 300000);
 
           const newText = normalizeScriptDraft(rebuildData.text);
           const patch = getScriptPartValidationPatch(newText, stateRef.current.claudeLiteMode !== false);
@@ -1239,6 +1298,12 @@ export default function App() {
               state,
             );
             mergedReport = mergeWithStageValidation(report, localVal);
+            if (currentStageId === "scene_cards") {
+              mergedReport = softenSceneCardsSupervisorReport(
+                mergedReport,
+                localVal.ok,
+              );
+            }
 
             // existing script checks
             if (
@@ -1390,6 +1455,12 @@ export default function App() {
             state,
           );
           mergedReport = mergeWithStageValidation(aiReport, localVal);
+          if (currentStageId === "scene_cards") {
+            mergedReport = softenSceneCardsSupervisorReport(
+              mergedReport,
+              localVal.ok,
+            );
+          }
 
           // For script_writer or clean_export, also apply local validateScriptText checks before allowing approval
           if (
@@ -1567,7 +1638,9 @@ export default function App() {
         parts.push({
           partNumber: m.number,
           partTitle: m.title,
-          sourceSceneCards: `Scenes for ${m.title}`,
+          sourceSceneCards:
+            extractPartSlice(currentState.sceneCards || "", m.number) ||
+            `Scenes for ${m.title}`,
           draftText: "",
           status: "not_started",
           supervisorReport: null,
@@ -1606,7 +1679,9 @@ export default function App() {
         parts.push({
           partNumber: i,
           partTitle: i === 1 ? "Introduction & Hook" : `Part ${i}`,
-          sourceSceneCards: `Scenes for Part ${i}`,
+          sourceSceneCards:
+            extractPartSlice(currentState.sceneCards || "", i) ||
+            `Scenes for Part ${i}`,
           draftText: "",
           status: "not_started",
           supervisorReport: null,
@@ -1640,7 +1715,7 @@ export default function App() {
           type: "text",
           stageId: "script_writer",
         }),
-      });
+      }, 4, 300000);
 
       const textOutput = normalizeScriptDraft(data.text);
 
@@ -1761,7 +1836,7 @@ export default function App() {
           type: "text",
           stageId: "script_writer",
         }),
-      });
+      }, 4, 300000);
 
       const newText = normalizeScriptDraft(data.text);
       const patch = getScriptPartValidationPatch(newText, currentState.claudeLiteMode !== false);
@@ -1885,7 +1960,7 @@ export default function App() {
               type: "text",
               stageId: "script_writer",
             }),
-          });
+          }, 4, 300000);
 
           const newText = normalizeScriptDraft(repairData.text);
           const patch = getScriptPartValidationPatch(newText, currentState.claudeLiteMode !== false);

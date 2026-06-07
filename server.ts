@@ -121,16 +121,35 @@ Do not describe the file, do not provide a filename, do not wrap the answer in a
 Do not fight the prompt with old formatting police rules. Paragraph length is a writing target, not a reason to explain or self-report.
 
 Paragraph and part length reminder:
-- each normal narrator paragraph should be 120-220 characters including spaces;
+- every normal narrator paragraph must be 120-220 characters including spaces;
 - 120-220 characters is usually about 22-40 English words;
-- the best target is 26-34 words per paragraph, around 150-190 characters;
-- if the target is a long full script around 120,000 total characters and the plan has nine parts, aim for about 13,000-14,500 characters per part including spaces;
-- that usually means about 60-90 voiceover paragraphs per part;
-- for a shorter 15-20 minute script, aim for about 5,000-7,000 characters per part;
-- for a 20-30 minute script, aim for about 8,000-11,000 characters per part;
-- for a 30+ minute script without a stricter total target, aim for about 12,000-15,000 characters per part;
-- if the number of parts is not nine, scale the part length naturally so every part carries its share of the full target length.
-- do not stop at 14-20 paragraphs for a long script; continue until the current part reaches its required length while preserving scene order and voiceover quality.
+- the best target is 26-34 words per paragraph, around 150-190 characters.
+
+Hard length lock:
+- for a nine-part script targeting 120,000-130,000 total characters, each part must be 12,500-14,500 characters including spaces;
+- absolute maximum per part: 15,000 characters including spaces;
+- never exceed 15,000 characters for one part;
+- when the current part reaches about 14,000 characters, finish the active beat and stop;
+- do not continue just because scene cards contain more details;
+- do not expand previous recap into new narration;
+- do not become literary to increase length;
+- compress events into short recap beats instead;
+- do not stop too early, but never exceed the hard maximum for the current part.
+
+Paragraph size lock:
+- every normal narrator paragraph must be 120-220 characters including spaces;
+- aim for 150-190 characters for most paragraphs;
+- shorter lines are allowed only for dialogue, system notifications, impact lines, or cliffhanger beats;
+- never create long literary blocks;
+- if a paragraph goes above 220 characters, split it into two visual beats;
+- if a paragraph is below 120 characters, merge it with the next action or reaction unless it is dialogue or impact.
+
+Hard recap style:
+- maximum twelve words per sentence whenever possible;
+- action must be followed by reaction;
+- write in simple first-person voiceover;
+- do not write like a novel, report, science explainer, or literary monologue;
+- every scene must show a visible problem, practical action, concrete result, reaction, and new pressure.
 
 For every part:
 - first identify the requested current part number and title from the prompt, then write only that part;
@@ -147,6 +166,15 @@ For every part:
 - make allies useful and enemies reactive, not stupid;
 - include micro-turns: cost, failed attempt, doubt, enemy adaptation, resource loss, public reaction, or a new problem;
 - end with a payoff or a forward hook.
+
+Before writing, silently check:
+1. current part plan slice;
+2. current part scene cards only;
+3. exact name ledger from the story contract;
+4. previous continuity summary;
+5. paragraph size lock;
+6. hard length maximum;
+7. first-person manga/manhwa recap voice.
 
 Forbidden output:
 - no analysis, checklist, QA report, markdown table, bullet list, scene labels, or debug notes;
@@ -481,7 +509,10 @@ function hydrateCurrentPartContext(prompt: string): string {
     return prompt;
   }
 
-  if (prompt.includes("Current Part Plan Slice:")) {
+  if (
+    prompt.includes("Current Part Plan Slice:") ||
+    prompt.includes("### 2. CURRENT PART PLAN SLICE ONLY")
+  ) {
     // Already hydrated by the frontend or a newer PromptBuilder.
   } else {
     const storyPlan = extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
@@ -535,50 +566,80 @@ function compactClaudePrompt(prompt: string): string {
   const liteSections = [
     clipPromptSection(
       extractPromptSection(prompt, "### 1. LOCKED STORY CONTRACT", [
-        "### 2. APPROVED STORY PLAN",
+        "### 2. CURRENT PART PLAN SLICE ONLY",
       ]),
-      3200,
+      2500,
     ),
     clipPromptSection(
-      extractPromptSection(prompt, "### 2. APPROVED STORY PLAN", [
+      extractPromptSection(prompt, "### 2. CURRENT PART PLAN SLICE ONLY", [
         "### 3. CURRENT PART TITLE & PURPOSE",
       ]),
-      4200,
+      3500,
     ),
     clipPromptSection(
       extractPromptSection(prompt, "### 3. CURRENT PART TITLE & PURPOSE", [
         "### 4. CURRENT PART SCENE CARDS ONLY",
       ]),
-      4200,
+      1200,
     ),
     clipPromptSection(
       extractPromptSection(prompt, "### 4. CURRENT PART SCENE CARDS ONLY", [
         "### 5. PREVIOUS APPROVED PARTS RECAP",
       ]),
-      4300,
+      4500,
     ),
     clipPromptSection(
       extractPromptSection(prompt, "### 5. PREVIOUS APPROVED PARTS RECAP", [
         "### 6. STYLE DNA",
       ]),
+      1000,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 6. STYLE DNA", [
+        "### 7. SHAPED VOICE STYLE SAMPLE",
+      ]),
+      800,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 7. SHAPED VOICE STYLE SAMPLE", [
+        "### 8. HARD RECAP STYLE LOCK",
+      ]),
+      600,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 8. HARD RECAP STYLE LOCK", [
+        "### 9. SCRIPT FORMATTING CONTRACT",
+      ]),
+      1800,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 9. SCRIPT FORMATTING CONTRACT", [
+        "### 10. PART WRITING PREFLIGHT LOCK",
+      ]),
+      1200,
+    ),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 10. PART WRITING PREFLIGHT LOCK", [
+        "### 11. MINIMAL HARD RULES",
+      ]),
       1600,
     ),
-    extractPromptSection(prompt, "### 6. STYLE DNA", [
-      "### 7. SHAPED VOICE STYLE SAMPLE",
-    ]),
-    extractPromptSection(prompt, "### 7. SHAPED VOICE STYLE SAMPLE", [
-      "### 8. MINIMAL HARD RULES",
-    ]),
-    extractPromptSection(prompt, "### 8. MINIMAL HARD RULES", [
-      "=== CURRENT PART ANCHOR ===",
-    ]),
+    clipPromptSection(
+      extractPromptSection(prompt, "### 11. MINIMAL HARD RULES", [
+        "=== CURRENT PART ANCHOR ===",
+      ]),
+      800,
+    ),
     clipPromptSection(
       extractPromptSection(prompt, "=== CURRENT PART ANCHOR ===", [
         "=== FINAL RUNTIME WRITER CORE ===",
       ]),
-      3600,
+      2500,
     ),
-    extractPromptSection(prompt, "=== FINAL RUNTIME WRITER CORE ===", []),
+    clipPromptSection(
+      extractPromptSection(prompt, "=== FINAL RUNTIME WRITER CORE ===", []),
+      3500,
+    ),
   ].filter((section) => section.trim().length > 0);
 
   const structuredCompacted = liteSections.join(

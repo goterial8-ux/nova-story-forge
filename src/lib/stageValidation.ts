@@ -158,6 +158,40 @@ export function mergeWithStageValidation(
   aiReport: any,
   localVal: StageValidationResult,
 ): any {
+  if (localVal.ok && localVal.stageId === "scene_cards") {
+    const reportString = JSON.stringify([
+      aiReport?.problems || [],
+      aiReport?.requiredFixes || [],
+      aiReport?.recommendation || "",
+    ]).toLowerCase();
+    const hardSceneCardBlocker = [
+      "genre drift",
+      "story drift",
+      "wrong premise",
+      "wrong world",
+      "unrelated",
+      "contradicts",
+      "clearly incomplete",
+      "output is incomplete",
+      "unfinished fragment",
+      "truncated",
+      "no scene cards",
+      "does not follow the story plan",
+    ].some((marker) => reportString.includes(marker));
+
+    if (!hardSceneCardBlocker) {
+      return {
+        ...aiReport,
+        status: "ok",
+        problems: [],
+        requiredFixes: [],
+        recommendation:
+          "Scene cards passed local structure. Exact field labels are not blocking.",
+        canContinue: true,
+      };
+    }
+  }
+
   if (localVal.ok) return aiReport;
 
   return {

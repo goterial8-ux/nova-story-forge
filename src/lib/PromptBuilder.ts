@@ -1,4 +1,9 @@
 import { ProjectState, StageId } from "../types";
+import {
+  clipForWriter,
+  extractPartSlice,
+  summarizeApprovedPartForContinuity,
+} from "./partUtils";
 
 const DRAFT_SCRIPT_CONTRACT = `=== DRAFT SCRIPT CONTRACT ===
 Draft script output format and goals:
@@ -6,11 +11,139 @@ Draft script output format and goals:
 - Prioritize correct story progression, survival premise, first-person voice, continuity, and complete part generation.
 - The story must be told in a living first-person recap voice using "I", "my", and "we" naturally.
 - Each normal narrator paragraph represents one visual frame.
-- During drafting, paragraphs of 120-235 characters are completely valid (do not block or fail on them).
+- Every normal narrator paragraph must be 120-220 characters including spaces.
+- Short punch lines are allowed only for dialogue, system notifications, impact lines, or cliffhanger beats.
+- Do not stack many short lines. Most narration paragraphs must stay inside 120-220 characters.
 - Each paragraph must contain one concrete visual beat: action, image, reaction, decision, danger, resource use, or payoff.
-- Explain tactics/plans through action and immediate consequence, not through long textbook exhibition.
+- Explain tactics/plans through action and immediate consequence, not through long textbook exposition.
 - Do not copy competitor paragraph formatting. Convert reference rhythm into frame-sized narration.
 - Do not use stage labels, scene labels, markdown tables, bullet lists, debug notes, or unfinished markers in the final script.`;
+
+const HARD_RECAP_STYLE_LOCK = `=== HARD RECAP STYLE LOCK ===
+
+You are writing a YouTube manga/manhwa recap script.
+
+The style must be simple, direct, fast, and visual.
+
+This is not a novel.
+This is not literary prose.
+This is not atmospheric writing.
+This is not a character psychology essay.
+This is not a technical explanation.
+
+Sentence rules:
+- Maximum twelve words per sentence whenever possible.
+- Never use long chained sentences.
+- Avoid sentences with three or more commas.
+- Avoid poetic metaphors.
+- Avoid slow descriptions of nature, smell, weather, or mood.
+- Avoid internal monologue longer than two short sentences.
+- Use simple action verbs.
+- Keep every sentence easy to read aloud.
+
+Core rhythm:
+- Action.
+- Reaction.
+- Next action.
+- Result.
+- New pressure.
+
+Scene structure:
+- One sentence shows the situation.
+- One sentence shows the threat or problem.
+- One sentence shows what I notice.
+- One sentence shows what I do.
+- One sentence shows the result.
+- One sentence shows the enemy, ally, crowd, or environment reaction.
+- Then move forward.
+
+Every scene must contain:
+- a visible problem;
+- a practical action;
+- a concrete result;
+- a reaction from someone or something;
+- a reason to continue watching.
+
+Forbidden style:
+- No long literary description.
+- No beautiful sadness prose.
+- No philosophical monologue.
+- No abstract emotional explanation.
+- No slow inner reflection.
+- No academic or technical report tone.
+- No scene labels.
+- No bullet points.
+- No markdown.
+- No explanations before or after the script.
+
+Use this rhythm for every part:
+I see the problem.
+I notice one useful detail.
+I act.
+The world reacts.
+Someone doubts, fears, laughs, or panics.
+The result becomes visible.
+A new problem appears.
+
+Length lock:
+For a nine-part script targeting 120,000-130,000 total characters, each part must be 12,500-14,500 characters including spaces.
+Absolute maximum per part: 15,000 characters.
+Never exceed 15,000 characters for one part.
+When the part reaches about 14,000 characters, finish the current beat and stop.
+Do not expand previous recap into new narration.
+Do not become literary to increase length.
+Compress events into short recap beats instead.`;
+
+const PART_WRITING_PREFLIGHT_LOCK = `=== PART WRITING PREFLIGHT LOCK ===
+
+Before writing this part, silently verify these rules:
+
+1. Current part only:
+- Write only the current part.
+- Follow the current part plan slice.
+- Follow the current part scene cards.
+- Do not jump ahead.
+- Do not import future events.
+- Do not expand previous recap into new scenes.
+
+2. Style:
+- Write in direct YouTube manga/manhwa recap style.
+- Use short, clear sentences.
+- Prefer action -> reaction -> next action.
+- Do not write literary prose.
+- Do not write slow atmosphere.
+- Do not write long inner monologue.
+- Do not explain emotions abstractly.
+- Show emotions through action, face, body, crowd, enemy, ally, or result.
+
+3. Paragraph length:
+- Every normal narrator paragraph must be 120-220 characters including spaces.
+- Aim for 150-190 characters for most paragraphs.
+- Shorter lines are allowed only for dialogue, impact, system messages, or cliffhangers.
+- Do not create many one-sentence micro-paragraphs.
+- Do not create long blocks above 220 characters.
+- If a paragraph becomes too long, split it into two visual beats.
+- If a paragraph is too short, merge it with the next action or reaction.
+
+4. Scene rhythm:
+- Situation.
+- Threat.
+- What I notice.
+- What I do.
+- Result.
+- Reaction.
+- Next pressure.
+
+5. Length:
+- Keep this part inside the required part length.
+- Do not exceed the hard maximum for the part.
+- Compress events instead of becoming literary.
+
+Return only the script text.
+No notes.
+No markdown.
+No scene labels.
+No explanation.`;
 
 const FINAL_POLISH_CONTRACT = `=== FINAL POLISH CONTRACT ===
 Strict final polish format and cleanup rules:
@@ -613,11 +746,16 @@ export function buildPartPrompt(
   );
   stage5Prompt = stage5Prompt.replaceAll(
     "{{STORY_PLAN}}",
-    state.storyPlan || "None",
+    clipForWriter(extractPartSlice(state.storyPlan, partNumber), 7000) ||
+      clipForWriter(state.storyPlan || "None", 7000),
   );
+  const currentSceneCardsSlice =
+    clipForWriter(extractPartSlice(state.sceneCards, partNumber), 9000) ||
+    clipForWriter(part?.sourceSceneCards || "None", 9000);
+
   stage5Prompt = stage5Prompt.replaceAll(
     "{{SCENE_CARDS}}",
-    state.sceneCards || "None",
+    currentSceneCardsSlice || "None",
   );
 
   stage5Prompt = stage5Prompt.replaceAll(
@@ -630,7 +768,7 @@ export function buildPartPrompt(
   );
   stage5Prompt = stage5Prompt.replaceAll(
     "{{CURRENT_PART_SCENE_CARDS}}",
-    part?.sourceSceneCards || "None",
+    currentSceneCardsSlice || "None",
   );
 
   const previousParts = state.scriptParts.filter(
@@ -639,10 +777,7 @@ export function buildPartPrompt(
   const previousSummary =
     previousParts.length > 0
       ? previousParts
-          .map(
-            (p) =>
-              `Part ${p.partNumber}: ${p.partTitle}\nContent:\n${p.draftText}`,
-          )
+          .map((p) => summarizeApprovedPartForContinuity(p))
           .join("\n\n------\n\n")
       : "None. This is the first part.";
   stage5Prompt = stage5Prompt.replaceAll(
@@ -710,6 +845,20 @@ Follow the approved story contract, approved story plan, and current part scene 
   // Add the CURRENT PART ANCHOR
   stage5Prompt += buildCurrentPartAnchor(partNumber, state);
 
+  stage5Prompt += `\n\n=== HARD RECAP STYLE LOCK ===\n${HARD_RECAP_STYLE_LOCK}`;
+
+  stage5Prompt += `\n\n=== SCRIPT FORMATTING CONTRACT ===\n${DRAFT_SCRIPT_CONTRACT}`;
+
+  stage5Prompt += `\n\n=== PART WRITING PREFLIGHT LOCK ===\n${PART_WRITING_PREFLIGHT_LOCK}`;
+
+  stage5Prompt += `\n\nFINAL PART WRITING COMMAND:
+Write only the current part.
+Follow the current part plan slice.
+Follow the current part scene cards.
+Use direct YouTube manga/manhwa recap narration.
+Every normal narrator paragraph must be 120-220 characters including spaces.
+Output only the script text.`;
+
   return stage5Prompt;
 }
 
@@ -719,15 +868,37 @@ export function buildSupervisorPrompt(
   state: ProjectState,
 ): string {
   const contract = stageId === "clean_export" ? FINAL_POLISH_CONTRACT : DRAFT_SCRIPT_CONTRACT;
-  const lengthCheckInstruction = stageId === "clean_export"
-    ? "For clean_export, strictly enforce 120-220 character paragraph rules and remove any technical/scientific tone."
-    : "For script_writer drafts, do NOT block approval for paragraph length, short punchy lines, or removable Part/Scene labels. Treat paragraph length as a Clean Export / Final Polish task. Only block for story drift, continuity break, incomplete output, wrong POV, passive protagonist, generic AI prose, weak progression, or severe report-like tone.";
+  const lengthCheckInstruction =
+    stageId === "clean_export"
+      ? "For clean_export, strictly enforce 120-220 character paragraph rules and remove any technical/scientific tone."
+      : stageId === "script_writer"
+        ? "For script_writer drafts, do NOT block approval for paragraph length, short punchy lines, or removable Part/Scene labels. Treat paragraph length as a Clean Export / Final Polish task. Only block for story drift, continuity break, incomplete output, wrong POV, passive protagonist, generic AI prose, weak progression, or severe report-like tone."
+        : "For planning stages, do not apply script paragraph length rules.";
 
-  const stageFailureInstruction = stageId === "clean_export"
-    ? "For clean_export, FAIL if output contains headings, technical residue, broken formatting, duplicate scenes, wrong paragraph lengths, story drift, or non-voiceover text."
-    : "For script_writer, FAIL only if output drifts from manga/manhwa recap, protagonist is passive or overpowered, parts repeat functions, no visual payoff, no face-slap, flat allies, stupid enemies, generic AI text, lacks first-person authored voice, breaks continuity, or sounds like a report instead of a story.";
+  const stageFailureInstruction =
+    stageId === "clean_export"
+      ? "For clean_export, FAIL if output contains headings, technical residue, broken formatting, duplicate scenes, wrong paragraph lengths, story drift, or non-voiceover text."
+      : stageId === "script_writer"
+        ? "For script_writer, FAIL only if output drifts from manga/manhwa recap, protagonist is passive or overpowered, parts repeat functions, no visual payoff, no face-slap, flat allies, stupid enemies, generic AI text, lacks first-person authored voice, breaks continuity, or sounds like a report instead of a story."
+        : stageId === "scene_cards"
+          ? "For scene_cards, PASS if the cards are usable for script writing, visually clear, aligned with the Story Plan, and not truncated. Do NOT fail because labels like scale, what must be shown, what must not be shown, or continuity details are missing."
+          : "For story_plan, block only for missing story structure, missing progression, obvious drift, or incomplete output.";
 
-  const additionalInstructions = `Supervisor MUST NOT trust words like "approved", "complete", "ready", or "final". Judge ONLY the actual text.\n${stageFailureInstruction}\n${lengthCheckInstruction}\n\n\n=== NARRATIVE DYNAMICS CONTRACT ===\n${NARRATIVE_DYNAMICS_CONTRACT}\n\n=== AUTHORIAL STYLE BLOCK ===\n${authorialStyleBlock()}\n\n=== SCRIPT FORMATTING CONTRACT ===\n${contract}\n\n=== LOCKED STORY CONTRACT ===\n${state.storyContract}`;
+  const sceneCardsSoftRule =
+    stageId === "scene_cards"
+      ? `\n\n=== SCENE CARDS SOFT FIELD RULE ===
+Do not require exact field names.
+Do not block for missing labels such as scale, what must be shown, what must not be shown, continuity details, visual focus, emotion, or location.
+Those fields are helpful, but they are not mandatory.
+Only block Stage Four if the scene cards are empty, truncated, unrelated to the plan, impossible to write from, missing most planned parts, or clearly drift into the wrong story.
+If the scene cards are detailed and usable, return status: ok and canContinue: true.`
+      : "";
+  const scriptContractBlock =
+    stageId === "script_writer" || stageId === "clean_export"
+      ? `\n\n=== SCRIPT FORMATTING CONTRACT ===\n${contract}`
+      : "";
+
+  const additionalInstructions = `Supervisor MUST NOT trust words like "approved", "complete", "ready", or "final". Judge ONLY the actual text.\n${stageFailureInstruction}\n${lengthCheckInstruction}${sceneCardsSoftRule}\n\n\n=== NARRATIVE DYNAMICS CONTRACT ===\n${NARRATIVE_DYNAMICS_CONTRACT}\n\n=== AUTHORIAL STYLE BLOCK ===\n${authorialStyleBlock()}${scriptContractBlock}\n\n=== LOCKED STORY CONTRACT ===\n${state.storyContract}`;
 
   return `=== AI SUPERVISOR ===\n${state.promptRegistry.aiSupervisorPrompt}\n\n${additionalInstructions}\n\nSTAGE: ${stageId}\n\n=== OUTPUT TO CHECK ===\n${output}\n\nIMPORTANT: Provide your analysis and report in Russian.`;
 }
@@ -832,7 +1003,13 @@ export function buildRepairPrompt(
     extraAnchor = buildCurrentPartAnchor(partNumber, state);
   }
 
-  const strictInstructions = `=== AUTHORIAL STYLE BLOCK ===\n${authorialStyleBlock()}\n\n=== SCRIPT FORMATTING CONTRACT ===\n${contract}\n\n=== NARRATIVE DYNAMICS CONTRACT ===\n${NARRATIVE_DYNAMICS_CONTRACT}\n\nSTRICT INSTRUCTION: Preserve plot, facts, names, and scene order exactly. Repair style and length only.${extraAnchor}`;
+  const paragraphFormat = `Paragraph format:
+Every normal narrator paragraph must be 120-220 characters including spaces.
+Preserve plot and scene order.
+Fix paragraph size by splitting long blocks or merging short adjacent beats.
+Do not become literary while fixing length.`;
+
+  const strictInstructions = `=== AUTHORIAL STYLE BLOCK ===\n${authorialStyleBlock()}\n\n=== SCRIPT FORMATTING CONTRACT ===\n${contract}\n\n=== PARAGRAPH FORMAT ===\n${paragraphFormat}\n\n=== NARRATIVE DYNAMICS CONTRACT ===\n${NARRATIVE_DYNAMICS_CONTRACT}\n\nSTRICT INSTRUCTION: Preserve plot, facts, names, and scene order exactly. Repair style and length only.${extraAnchor}`;
 
   return `=== TARGETED REPAIR ===\n${state.promptRegistry.repairPrompt}\n\n${strictInstructions}\n\nBROKEN OUTPUT:\n${brokenOutput}\n\nSUPERVISOR REPORT:\n${JSON.stringify(cleanedReport, null, 2)}\n\nIMPORTANT: Output the repaired version in ${lang}. Ensure all structural rules are preserved.`;
 }
@@ -841,7 +1018,15 @@ export function buildSoftCleanupPrompt(
   brokenOutput: string,
   report: any,
 ): string {
-  return `=== SOFT CLEANUP ===\nYou are the final polish editor. The text has minor layout or formatting issues, such as paragraph lengths being slightly off (aim for 120-220 characters).
+  return `=== SOFT CLEANUP ===
+You are the final polish editor.
+
+Paragraph format:
+Normal narrator paragraphs must be 120-220 characters including spaces.
+Dialogue, impact lines, system notifications, and cliffhanger lines may be shorter.
+Fix long literary blocks by splitting them into visual action/reaction beats.
+Preserve plot and scene order.
+Do not become literary while fixing length.
   
 SUPERVISOR REPORT:
 ${JSON.stringify(report, null, 2)}
@@ -896,7 +1081,8 @@ STRICT REBUILD INSTRUCTIONS:
 1. Discard the failed version's text and vocabulary completely.
 2. Under no circumstances use any sci-fi facility or technical laboratory vocabulary (tests, proctors, plasma batteries, exoskeletons, toxic trenches, military armories, lasers, structural weak points, thermal signatures, conductive, optimized, energy sources, etc.).
 3. Stick strictly to the approved story contract, approved story plan, and current part scene cards. Use only the current project's approved setting, protagonist, resources, enemies, mechanics, conflicts, and progression logic. Do not import setting, vocabulary, names, mechanics, or resources from any previous project or style sample.
-4. Rewrite this part from scratch according to the original approved instructions below, strictly respecting the SCRIPT VOICE RULES (write like a human YouTube manga recap storyteller, fast-paced, highly visual, direct, action-focused):
+4. Every normal narrator paragraph must be 120-220 characters including spaces. Fix paragraph size by splitting long blocks or merging short adjacent beats.
+5. Rewrite this part from scratch according to the original approved instructions below, strictly respecting the SCRIPT VOICE RULES (write like a human YouTube manga recap storyteller, fast-paced, highly visual, direct, action-focused):
 
 Original Part Prompt:
 ${partPrompt}`;
@@ -911,15 +1097,20 @@ export function buildClaudeLitePartPrompt(
   // 1. Locked story contract, compat
   const lockedContract = state.storyContract || "None specified.";
 
-  // 2. Approved story plan, compact
-  const storyPlanCompact = state.storyPlan || "None specified.";
+  // 2. Current part story plan slice only
+  const storyPlanCompact =
+    clipForWriter(extractPartSlice(state.storyPlan, partNumber), 7000) ||
+    clipForWriter(state.storyPlan || "None specified.", 7000);
 
   // 3. Current part title and purpose
   const currentPartTitle = part?.partTitle || `Part ${partNumber}`;
   const purpose = `Write the full voiceover draft for Part ${partNumber}: "${currentPartTitle}". This is a crucial section of the overarching story plan, driving key progression.`;
 
   // 4. Current part scene cards only
-  const currentPartSceneCards = part?.sourceSceneCards || "No scene cards specified.";
+  const currentPartSceneCards =
+    clipForWriter(extractPartSlice(state.sceneCards, partNumber), 9000) ||
+    clipForWriter(part?.sourceSceneCards || "No scene cards specified.", 9000) ||
+    "No scene cards specified.";
 
   // 5. Summary of previous approved parts only
   const previousParts = state.scriptParts.filter(
@@ -927,10 +1118,7 @@ export function buildClaudeLitePartPrompt(
   );
   const previousSummary = previousParts.length > 0
     ? previousParts
-        .map(
-          (p) =>
-            `- Part ${p.partNumber}: "${p.partTitle}"\n  Content Preview:\n  ${p.draftText}`,
-        )
+        .map((p) => summarizeApprovedPartForContinuity(p))
         .join("\n\n")
     : "None. This is the first part of the script.";
 
@@ -961,7 +1149,7 @@ Each beat should feel like a manga recap panel: danger, choice, physical action,
 ### 1. LOCKED STORY CONTRACT
 ${lockedContract}
 
-### 2. APPROVED STORY PLAN
+### 2. CURRENT PART PLAN SLICE ONLY
 ${storyPlanCompact}
 
 ### 3. CURRENT PART TITLE & PURPOSE
@@ -980,12 +1168,27 @@ ${shortStyleDna}
 ### 7. SHAPED VOICE STYLE SAMPLE
 ${styleSample}
 
-### 8. MINIMAL HARD RULES
+### 8. HARD RECAP STYLE LOCK
+${HARD_RECAP_STYLE_LOCK}
+
+### 9. SCRIPT FORMATTING CONTRACT
+${DRAFT_SCRIPT_CONTRACT}
+
+### 10. PART WRITING PREFLIGHT LOCK
+${PART_WRITING_PREFLIGHT_LOCK}
+
+### 11. MINIMAL HARD RULES
 ${minimalHardRules}
 
 ${anchorBlock}
 
-Begin drafting the text for Part ${partNumber} below:`;
+Begin drafting the text for Part ${partNumber} below:
+Write only this part.
+Follow the current part plan slice.
+Follow the current part scene cards.
+Use the HARD RECAP STYLE LOCK.
+Keep every normal narrator paragraph between 120 and 220 characters.
+Output only the script text for this part.`;
 }
 
 export function buildCurrentPartAnchor(
@@ -994,7 +1197,10 @@ export function buildCurrentPartAnchor(
 ): string {
   const part = state.scriptParts.find((p) => p.partNumber === partNumber);
   const partTitle = part?.partTitle || `Part ${partNumber}`;
-  const sceneCards = part?.sourceSceneCards || "No scene cards specified.";
+  const sceneCards =
+    clipForWriter(extractPartSlice(state.sceneCards, partNumber), 4000) ||
+    part?.sourceSceneCards ||
+    "No scene cards specified.";
 
   // Tone of this part: infer briefly from current part title and current part scene cards.
   let toneOfPart = "Fast, visual, tense, practical, with humiliation/reversal energy.";
@@ -1082,5 +1288,16 @@ Do not use technical report language.
 Do not write like a science explanation.
 Do not copy competitor plots.
 Do not write a summary.
+Do not write paragraphs longer than 220 characters.
+Do not write many short broken lines.
+Do not use literary paragraphing.
+
+7. PARAGRAPH SIZE LOCK
+Every normal narrator paragraph must be 120-220 characters including spaces.
+Aim for 150-190 characters for most paragraphs.
+Shorter lines are allowed only for dialogue, system notifications, impact lines, or cliffhanger beats.
+Never create long literary blocks.
+If a paragraph goes above 220 characters, split it into two visual beats.
+If a paragraph is below 120 characters, merge it with the next action or reaction unless it is dialogue or impact.
 Write visual first-person narration.`;
 }

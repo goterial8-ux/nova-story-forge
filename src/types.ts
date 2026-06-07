@@ -700,11 +700,11 @@ You must check:
 * Is it too long or too short for the stage?
 * Does it contain technical residue?
 * Does it contain unfinished fragments?
-* Did the writer use "adjective soup", stacked adjectives (more than ONE adjective per noun), or named emotions (e.g., "heavy iron boots", "cold paralyzing fear")? The rules strictly enforce ONE adjective per noun maximum and zero named emotions. If violated, flag as needs_repair and instruct to REWRITE the sentences to remove stacked adjectives, show feelings through action, and expand length using concrete character logic instead of fluff.
+* Did the writer overuse repeated adjectives, generic AI phrasing, or named emotions? Treat this as a style warning unless it seriously damages the scene. Do not block a stage only because of one or two adjective/named-emotion issues.
 * Did the writer become "lazy" after removing the fluff? Did they rush the plot, skipping over details or outputting a thin, bullet-point-like summary instead of a fully fleshed-out story? If the pacing is rushed and lacks deep micro-actions/dialogue, flag as needs_repair and instruct to slow down time and expand the tactical steps.
 * Did the writer fall into the "TEXTBOOK TRAP" (Душниловка)? Are there long paragraphs of pure theory or calculation without immediate danger, ticking clocks, or external action? If the script feels like a dry lecture, flag as needs_repair and instruct the writer to intertwine the theory heavily with physical survival pressure and quick action consequences.
 * Does the narration sound like a cold, detached robot just reporting events? If the protagonist fails to analyze the situation, calculate risks, or show active mental process ("живой рассказчик и анализ"), flag as needs_repair and instruct the writer to inject real-time inner monologue and tactical analysis.
-* Specifically for STAGE: script_writer: is the output strictly between 10,000 and 14,000 characters (approximately 1,600 to 2,300 words) including spaces? If it is less than 10,000 characters or less than 1,600 words, it MUST be marked as needs_serious_repair and cannot be approved.
+* Specifically for STAGE: script_writer: do NOT block approval for paragraph length or exact character length alone. Only block if the part is clearly incomplete, rushed, off-plan, off-voice, or too thin to cover its current part scene cards.
 * STYLE CRITIC PASS: Does the generated text match the approved Style DNA?
   - Does it match the sentence and paragraph rhythm?
   - Is it too generic AI?
@@ -716,6 +716,13 @@ You must check:
 If the style does not match or copies references, you MUST flag it as needs_repair and output EXACTLY this required fix:
 "STYLE REWRITE PASS: Rewrite only the narration style. Preserve plot, facts, character names, continuity, and scene order. Do not add new story events. Make the sentence rhythm, explanation style, and payoff delivery match the Style DNA."
 * Is it safe to continue?
+
+=== SCENE CARDS SOFT FIELD RULE ===
+For STAGE: scene_cards, do not require exact field labels.
+Do not block because the output does not literally contain labels like "scale", "what must be shown", "what must not be shown", "continuity details", "visual focus", "emotion", or "location".
+Those labels are helpful, but they are not mandatory.
+Only block Scene Cards if they are empty, truncated, unrelated to the approved Story Plan, missing most planned parts, impossible to write from, or clearly drifting into the wrong story.
+If the scene cards are detailed, visual, and usable for script writing, return status: ok and canContinue: true.
 
 === GENRE DRIFT FIX FORMAT ===
 If any genre drift is detected (e.g. going into gore horror, pure fantasy, dry novel, random boss battles, etc.), you MUST include the following block in your response:
@@ -6494,8 +6501,8 @@ You MUST maintain absolute alignment with the provided Story Plan and the Scene 
 - DO NOT skip any of the key scenes or beats specified in the Scene Cards for Current Part.
 - Keep the approved story contract, character names, and their specific roles perfectly consistent as defined in the Character Bible.
 
-CRITICAL: HOW TO REACH 10,000+ CHARACTERS (1,600+ WORDS) WITHOUT FLUFF (PREVENTING "LAZY" WRITING)
-Since you cannot use adjectives, filler, or poetic slop, you must work harder to expand the actual narrative depth. To reach the required length, DO NOT rush the plot. Instead, SLOW DOWN TIME within the scene:
+CRITICAL: HOW TO REACH THE REQUIRED PART LENGTH WITHOUT FLUFF (PREVENTING "LAZY" WRITING)
+Since you cannot use filler or poetic slop, you must work harder to expand the actual narrative depth. To reach the required part length, DO NOT rush the plot. Instead, SLOW DOWN TIME within the scene:
 * MICRO-ACTIONS: Break down complex physical actions into step-by-step visual actions. (e.g., Don't say "I fixed it." Say "I checked the valve. I cleared the rust. I pulled the lever. It held.")
 * DEEPEN THE SURVIVAL THOUGHTS: Expand the protagonist's internal monologue. Let the audience hear what they notice, what choices they weigh under pressure, why options A and B fail, and why option C is the only choice.
 * EXPAND DIALOGUE & PUSHBACK: Make conversations longer and more resistant. Antagonists should argue back. Allies should doubt. The protagonist must convince them through simple survival logic.
@@ -6509,9 +6516,9 @@ Explaining details without danger is incredibly boring. Do not turn the script i
 - TEST THE THEORY INSTANTLY: Weigh danger -> Act -> React. Let them apply their knowledge in small, immediate steps that either work or fail, rather than summarizing a master plan.
 - HUMAN FACTOR: They are struggling to survive, not just solving an academic puzzle. Ground their intellect in physical reality (adrenaline, pain, exhaustion, relief). Keep it human and real.
 
-CRITICAL: LENGTH REQUIREMENT, ADJECTIVE DISCIPLINE & MC BALANCE (АНТИ-ИМБА)
-Each part MUST BE strictly between 10,000 and 14,000 characters (approximately 1,600 to 2,300 words) including spaces.
-- This is a hard requirement. If you run out of plot, expand NOT by using flowery/over-decorative adjectives or passive "poetic slop", but by including more practical, active narrative details:
+CRITICAL: LENGTH REQUIREMENT, STYLE DISCIPLINE & MC BALANCE (АНТИ-ИМБА)
+For a nine-part long script, each part should carry about 12,500-14,500 characters including spaces, with an absolute maximum of 15,000 characters per part.
+- If you run out of plot, expand NOT by using flowery adjectives or passive "poetic slop", but by including more practical, active narrative details:
   * External settings (weather, sounds, smell, direct tactile sensations, atmosphere). Keep descriptions active and dry, never flowery.
   * Internal character survival decisions, choices, and micro-strategies (thoughts, doubts, evaluations, fears, what they plan to do next).
   * Social interactions and reactions of characters nearby.
@@ -6521,7 +6528,7 @@ Each part MUST BE strictly between 10,000 and 14,000 characters (approximately 1
   * If the character's background is an ordinary human category (e.g., student, modern academic, normal civilian), they MUST NOT possess instant expertise in combat, high-tech engineering, precise chemistry, or master tactical maneuvers out of thin air.
   * Their theoretical or professional background specialized knowledge is NOT a magic cheat code. Every physical/mental effort must match their stamina and actual capabilities, and fatigue/strain must feel real.
   * Let their plans have realistic friction, failures, and costly consequences. The protagonist must face setbacks, struggle, make miscalculations, or barely survive rather than easily solving every massive crisis as an invincible Mary Sue / Gary Stu.
-- DO NOT use passive "adjective soup" or purple prose to inflate length (e.g., "heavy iron collar on my physical neck was fusing with my blistering skin under the unforgiving midday sun" is banned/запрещено. Instead write: "Железный ошейник натирал шею под солнцем.").
+- DO NOT use repeated adjectives or purple prose to inflate length. Keep descriptions concrete, visual, and attached to action.
 - ZERO TOLERANCE FOR FLUFF (ВОДА): If you need to hit the character count, expand the actual plot (dialogue, physical actions, survival decisions), DO NOT add pointless sentences about the sky or endless emotional repetition.
 - DO NOT summarize.
 - DO NOT hurry.
