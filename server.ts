@@ -170,7 +170,7 @@ Forbidden output:
 - no generic "little did I know" or empty destiny prose;
 - no copying reference plots, names, scenes, powers, or twists;
 - no Cyrillic words, mixed Cyrillic/Latin words, broken foreign words, or accidental untranslated words inside English script paragraphs;
-- no broken placeholder residue such as Main, Show, ONE, STYLE, Card, Face, Hook, or Exit used incorrectly.
+- no prompt residue, uppercase planning labels, section labels, or debug text inside narration; avatar commentary blocks are allowed when intentional.
 
 Output only the plain .txt file body for this current part.
 `;
@@ -966,8 +966,9 @@ function normalizeNameVariants(text: string, prompt: string): string {
 }
 
 function normalizeScriptWriterOutput(text: string, prompt: string): string {
+  void prompt;
   const normalized = mergeShortScriptParagraphs(
-    normalizeNameVariants(fixKnownMixedAlphabetArtifacts(text), prompt),
+    fixKnownMixedAlphabetArtifacts(text),
   );
 
   if (normalized !== text) {
@@ -977,6 +978,61 @@ function normalizeScriptWriterOutput(text: string, prompt: string): string {
   }
 
   return normalized;
+}
+
+
+function stripAvatarBlocksForGuard(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s*\[Avatar\b/i.test(line.trim()))
+    .join("\n");
+}
+
+function currentPartPlanFromPrompt(prompt: string): string {
+  const section = extractPromptSection(prompt, "=== CURRENT PART PLAN ===", [
+    "=== PLAN BEAT ANCHORS",
+    "=== PREVIOUS WRITTEN PARTS CONTEXT ===",
+    "=== EXTRA INSTRUCTION ===",
+    "=== COMMAND ===",
+    "=== FINAL RUNTIME WRITER CORE ===",
+  ]);
+
+  return section.replace(/^=== CURRENT PART PLAN ===/i, "").trim();
+}
+
+function validateScriptWriterPrompt(prompt: string): void {
+  const plan = currentPartPlanFromPrompt(prompt);
+  const minPlanChars = Number(process.env.SCRIPT_WRITER_MIN_PART_PLAN_CHARS || 450);
+  const hasEmptyMarker = /\[CURRENT PART PLAN IS EMPTY\]/i.test(plan);
+
+  if (!plan || hasEmptyMarker || plan.length < minPlanChars) {
+    const error: any = new Error(
+      `Current Part Plan is missing or too short (${plan.length} chars). Sync parts from Story Plan before generating this part.`,
+    );
+    error.status = 400;
+    throw error;
+  }
+}
+
+function validateScriptWriterOutput(text: string): void {
+  const guardText = stripAvatarBlocksForGuard(text);
+  const chineseChars = (guardText.match(/[\u3400-\u9FFF]/g) || []).length;
+  if (chineseChars >= 3) {
+    const error: any = new Error(
+      "Provider returned non-English/Chinese text inside the Script Writer output. Retry this part.",
+    );
+    error.status = 422;
+    throw error;
+  }
+
+  const residueMatch = guardText.match(/\b(?:SCENE|PLAN|FINAL|LOCKED|VOICE|WRITER|AUTO|STYLE|CARD|HOOK|MAIN|SHOW|READY|PART|ONE)\b/);
+  if (residueMatch) {
+    const error: any = new Error(
+      `Script Writer output contains prompt residue: ${residueMatch[0]}. Clear/regenerate this part.`,
+    );
+    error.status = 422;
+    throw error;
+  }
 }
 
 // Unified generate/RPC route
@@ -1059,6 +1115,7 @@ async function handleGenerate(req: express.Request, res: express.Response) {
 
     if (!isSupervisor && stageId === "script_writer") {
       textOutput = normalizeScriptWriterOutput(textOutput, runtimePrompt);
+      validateScriptWriterOutput(textOutput);
     }
 
     if (!isSupervisor && stageId === "scene_cards" && textOutput.trim().length > 0) {
@@ -1097,7 +1154,14 @@ async function handleGenerate(req: express.Request, res: express.Response) {
       String(errMsg).toLowerCase().includes("rate limit") ||
       String(errMsg).includes("input tokens per minute");
 
-    return res.status(isRateLimit ? 429 : 500).json({
+    const explicitStatus = Number(error?.status || error?.statusCode || 0);
+    const statusCode = isRateLimit
+      ? 429
+      : explicitStatus >= 400 && explicitStatus < 600
+        ? explicitStatus
+        : 500;
+
+    return res.status(statusCode).json({
       success: false,
       error: isRateLimit ? `429 RATE_LIMIT: ${errMsg}` : errMsg,
       retryAfter: error?.retryAfter || null,

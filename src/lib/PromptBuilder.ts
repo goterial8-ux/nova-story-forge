@@ -67,34 +67,12 @@ Plan expansion:
 - If the plan mentions childhood, father, mother, family, poverty, debt, humiliation, training, fear, old wounds, personal failure, or past lessons, use it through action and situation.
 
 Clean output rule:
-- Do not output broken placeholder words or prompt residue.
-- These words are allowed only when they naturally belong to the sentence: main, show, one, style, card, face, hook, exit.
-- Never use them as broken placeholders, character-name replacements, uppercase residue, or random standalone fragments.
-
-Bad examples:
-Main turned around.
-Show looked at me.
-ONE string.
-STYLE breathing too fast.
-Card, clean water.
-Leave. Now. Face.
-Hook the deer shifted routes.
-Exit spirits.
-
-Good examples:
-Mio turned around.
-She looked at me.
-One string hung loose from the bow.
-I was breathing too fast.
-The water was clean.
-I had to leave now.
-The deer shifted routes before a storm.
-The old path led toward the exit.
-
-Before sending the final script, silently scan the whole output.
-If Main appears as a character name, replace it with the correct locked name.
-If Show appears instead of she/her, rewrite the sentence.
-If ONE, STYLE, Card, Face, Hook, or Exit appears as residue, rewrite that sentence naturally.
+- Do not output prompt residue, section labels, debug text, or planning labels inside narration.
+- Do not use uppercase planning labels as story words.
+- Avatar commentary blocks are allowed when intentional, for example [Avatar — reaction shot, quick comment].
+- Keep avatar blocks short, separate from narrator paragraphs, and tied to the current beat.
+- Do not change character names.
+- Before sending the final script, silently scan the whole output and rewrite any sentence that contains prompt residue.
 
 Do not output system messages.
 Do not output provider error messages.
@@ -273,25 +251,39 @@ function getLastApprovedPartVoiceAnchor(state: ProjectState, partNumber: number)
   ].join("\n");
 }
 
-function buildSceneAnchorsFromPlan(currentPartPlan: string): string {
+function sanitizeAnchorText(value: string): string {
+  return value
+    .replace(/\bSCENE\b/g, "beat")
+    .replace(/\bScene\s+/g, "Beat ")
+    .replace(/\bscene\s+/g, "beat ")
+    .replace(/\bPLAN\b/g, "outline")
+    .replace(/\bFINAL\b/g, "last")
+    .replace(/\bVOICE\b/g, "continuity")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildPlanBeatAnchorsFromPlan(currentPartPlan: string): string {
   if (!currentPartPlan || !currentPartPlan.trim()) return "";
 
-  const sceneBlocks = currentPartPlan.split(/(?=^(?:Scene|SCENE|Scene |SCENE )?\d)/m);
+  const beatBlocks = currentPartPlan.split(
+    /(?=^(?:(?:Beat|BEAT|Scene|SCENE)\s+)?\d+(?:[.)—–:-]|\s))/m,
+  );
   const anchors: string[] = [];
 
-  for (let i = 0; i < sceneBlocks.length; i++) {
-    const block = sceneBlocks[i].trim();
+  for (let i = 0; i < beatBlocks.length; i++) {
+    const block = beatBlocks[i].trim();
     if (!block || block.length < 30) continue;
 
-    const firstLine = block.split("\n")[0].trim();
-    const bodyLines = block.split("\n").slice(1).join("\n").trim();
+    const firstLine = sanitizeAnchorText(block.split("\n")[0].trim());
+    const bodyLines = sanitizeAnchorText(block.split("\n").slice(1).join("\n").trim());
     if (!bodyLines || bodyLines.length < 20) continue;
 
     const lastSentence = bodyLines.match(/[^.!?]*[.!?]\s*$/)?.[0] || bodyLines.slice(-120).trim();
-    const sceneNumber = i + 1;
+    const beatNumber = anchors.length + 1;
 
     anchors.push(
-      `SCENE ${sceneNumber} ANCHOR — Goal: ${firstLine.slice(0, 120)} | Last sentence from previous scene: "${lastSentence.slice(0, 120)}"`,
+      `BEAT ${beatNumber} ANCHOR — Goal: ${firstLine.slice(0, 120)} | Continuity handoff: "${lastSentence.slice(0, 120)}"`,
     );
   }
 
@@ -299,9 +291,9 @@ function buildSceneAnchorsFromPlan(currentPartPlan: string): string {
 
   return [
     "",
-    "=== SCENE ANCHORS (apply to each scene in order) ===",
+    "=== PLAN BEAT ANCHORS (apply in order) ===",
     anchors.join("\n"),
-    "Apply each anchor before writing its scene. Match the voice anchor above. Keep first-person, short sentences, 120-220 char paragraphs.",
+    "Apply each beat anchor before writing that beat. Keep first-person where appropriate, short sentences, and 120-220 character paragraphs.",
   ].join("\n");
 }
 
@@ -314,7 +306,7 @@ export function buildPartPrompt(partNumber: number, state: ProjectState): string
   const manualTargetChars = String((part as any)?.manualTargetChars || "12,000-15,000 characters including spaces").trim();
   const previousContext = previousWrittenPartsContext(partNumber, state);
   const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
-  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
+  const planBeatAnchors = buildPlanBeatAnchorsFromPlan(currentPartPlan);
   const characterNames = String(state.characterNames || state.lockedCharacterNames || "").trim();
 
   return `${characterNames ? `=== LOCKED CHARACTER NAMES — MEMORIZE BEFORE WRITING ===\n${characterNames}\nNever substitute character names with Main, Show, Hook, Card, Style, Face, Exit, or any prompt word.\nBefore outputting: scan for these words and replace with correct names.\n\n` : ""}=== STYLE RULES — READ BEFORE WRITING ANYTHING ===
@@ -329,7 +321,7 @@ ${voiceAnchor ? `=== VOICE ANCHOR ===\n${voiceAnchor}\n` : ""}
 === CURRENT PART PLAN ===
 ${currentPartPlan}
 
-${sceneAnchors ? `${sceneAnchors}\n` : ""}
+${planBeatAnchors ? `${planBeatAnchors}\n` : ""}
 === PREVIOUS WRITTEN PARTS CONTEXT ===
 ${previousContext}
 
@@ -347,7 +339,7 @@ Follow the style rules and target length.
 FINAL CHECK before outputting:
 - Scan your first 10 sentences. Does any sentence exceed 10 words? Split it.
 - Scan your paragraphs. Is any paragraph over 220 characters? Break it.
-- Fix any placeholder residue (Main, Show, ONE, STYLE, Card, Face, Hook, Exit).
+- Fix any prompt residue, uppercase planning labels, or debug text.
 
 Output only the finished clean script text in English.`;
 }
@@ -365,7 +357,7 @@ For Script Writer, check:
 - follows the current part plan;
 - complete part, not a short summary;
 - clean English manga/manhwa recap voiceover;
-- no broken placeholder residue such as Main/Show/ONE/STYLE/Card/Face/Hook/Exit used incorrectly;
+- no prompt residue, uppercase planning labels, or debug text inside narration;
 - no provider/system messages;
 - no unfinished ending.
 
@@ -403,10 +395,8 @@ For Script Writer repairs:
 - Use ONLY the Current Part Plan.
 - Do not use Scene Cards.
 - Preserve plot, names, part order, and continuity.
-- Remove broken placeholder residue.
-- If Main is used as a character name, replace it with the correct locked character name.
-- If Show is used instead of she/her, rewrite the sentence.
-- If ONE, STYLE, Card, Face, Hook, or Exit appears as residue, rewrite that sentence naturally.
+- Remove prompt residue, uppercase planning labels, and debug text.
+- Preserve valid avatar commentary blocks when they are intentional.
 - Output only clean script text.
 
 CURRENT PART PLAN:
@@ -448,7 +438,7 @@ export function buildRebuildPrompt(
   const partTitle = part?.partTitle || `Part ${partNumber}`;
   const currentPartPlan = partPlanFor(partNumber, part, state);
   const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
-  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
+  const planBeatAnchors = buildPlanBeatAnchorsFromPlan(currentPartPlan);
 
   return `=== FULL PART REBUILD ===
 The previous attempt failed. Discard that failed version.
@@ -471,7 +461,7 @@ ${JSON.stringify(report || {}, null, 2)}
 
 ${voiceAnchor}
 
-${sceneAnchors}
+${planBeatAnchors}
 
 STYLE RULES:
 ${DEFAULT_SCRIPT_STYLE_RULES}
@@ -513,7 +503,7 @@ export function buildContinuationPrompt(
   const currentPartPlan = partPlanFor(partNumber, part, state);
   const previousContext = previousWrittenPartsContext(partNumber, state);
   const voiceAnchor = getLastApprovedPartVoiceAnchor(state, partNumber);
-  const sceneAnchors = buildSceneAnchorsFromPlan(currentPartPlan);
+  const planBeatAnchors = buildPlanBeatAnchorsFromPlan(currentPartPlan);
   const lastParagraph = extractLastCompleteParagraph(brokenText);
   const lastSentence = findLastSentence(brokenText);
 
@@ -539,7 +529,7 @@ ${previousContext}
 
 ${voiceAnchor}
 
-${sceneAnchors}
+${planBeatAnchors}
 
 === STYLE RULES (hard standard — follow exactly) ===
 - First person when following the main character
