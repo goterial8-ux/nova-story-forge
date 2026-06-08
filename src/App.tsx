@@ -1157,6 +1157,41 @@ export default function App() {
     return { allowed: true };
   };
 
+  const extractCharacterNamesFromContent = async (content: string) => {
+    const extractionPrompt = `From the story contract below, extract ONLY character names (people, creatures, entities with proper names).
+Return ONLY this exact format, nothing else:
+LOCKED CHARACTER NAMES:
+- Name: role description
+
+Rules:
+- Only include proper character names (like Naoto, Mio, Gensui, Haruto, etc.)
+- Do NOT include: place names, story terms, abstract concepts
+- Do NOT include words like: Payoff, Setup, Reveal, Conflict, Hook, Main, Show, Part, Scene, Style, Card, Beat, Arc, Theme, Stage, Plan, Contract, Chapter, Section, Act
+- Maximum 12 characters total
+
+Story Contract:
+${content.substring(0, 3000)}`;
+
+    try {
+      const response = await fetchWithRetry("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: extractionPrompt,
+          type: "text",
+          stageId: "raw_idea",
+        }),
+      });
+      const extractedNames = response.text?.trim();
+      if (extractedNames && extractedNames.includes("LOCKED CHARACTER NAMES:")) {
+        updateState({ characterNames: extractedNames });
+        console.log("[Character Extraction] Names saved:", extractedNames.substring(0, 200));
+      }
+    } catch (err) {
+      console.warn("[Character Extraction] Silent fail:", err);
+    }
+  };
+
   const handleGenerate = async () => {
     const check = canProceedToStage(currentStageId);
     if (!check.allowed) {
@@ -1183,6 +1218,11 @@ export default function App() {
           const textOutput = data.text;
           setStageContent(currentStageId, textOutput);
           updateStageStatus(currentStageId, "generated");
+
+          // Auto-extract character names after story_dna stage
+          if (currentStageId === "story_dna" && textOutput.trim().length > 100) {
+            extractCharacterNamesFromContent(textOutput);
+          }
 
           const newHistoryEntry = {
             id: Date.now().toString(),
